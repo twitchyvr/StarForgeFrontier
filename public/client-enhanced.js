@@ -24,6 +24,8 @@
   const addCargoBtn = document.getElementById('addCargo');
   const addWeaponBtn = document.getElementById('addWeapon');
   const addShieldBtn = document.getElementById('addShield');
+  const addReactorBtn = document.getElementById('addReactor');
+  const shipEditorToggleBtn = document.getElementById('shipEditorToggle');
   
   // Ship stats UI elements
   const shipSpeedEl = document.getElementById('shipSpeed');
@@ -50,6 +52,9 @@
   // Galaxy system
   let galaxyUI = null;
   let currentSectorData = null;
+  
+  // Ship editor system
+  let shipEditor = null;
   
   // Combat state
   let selectedTarget = null;
@@ -161,6 +166,13 @@
   closeShopBtn.addEventListener('click', () => {
     shopPanel.classList.add('hidden');
   });
+  
+  // Ship editor toggle
+  shipEditorToggleBtn.addEventListener('click', () => {
+    if (shipEditor) {
+      shipEditor.openEditor();
+    }
+  });
 
   // Keyboard shortcut for shop and combat controls
   window.addEventListener('keydown', (e) => {
@@ -179,6 +191,11 @@
     } else if (e.code === 'Space') {
       e.preventDefault();
       fireWeapon();
+    } else if (e.key === 'B' || e.key === 'b') {
+      e.preventDefault();
+      if (shipEditor) {
+        shipEditor.openEditor();
+      }
     }
   });
 
@@ -272,8 +289,12 @@
         
         galaxyUI = new GalaxyUI(gameClientInterface);
         
-        // Make galaxy UI and game functions globally accessible
+        // Initialize ship editor
+        shipEditor = new ShipEditor(gameClientInterface);
+        
+        // Make galaxy UI, ship editor and game functions globally accessible
         window.galaxyUI = galaxyUI;
+        window.shipEditor = shipEditor;
         window.playSound = playSound;
       }
       
@@ -470,6 +491,7 @@
     addCargoBtn.disabled = myResources < 30;
     if (addWeaponBtn) addWeaponBtn.disabled = myResources < 70;
     if (addShieldBtn) addShieldBtn.disabled = myResources < 60;
+    if (addReactorBtn) addReactorBtn.disabled = myResources < 120;
     const addWarpDriveBtn = document.getElementById('addWarpDrive');
     if (addWarpDriveBtn) addWarpDriveBtn.disabled = myResources < 150;
   }
@@ -745,6 +767,16 @@
     ws.send(JSON.stringify({ type: 'build', module }));
     showNotification('Shield module added!', 'success');
     triggerShake(8, 250);
+  });
+
+  addReactorBtn.addEventListener('click', () => {
+    const self = players[myId];
+    if (!self || myResources < 120) return;
+    const offset = (self.modules.length) * 22;
+    const module = { id: 'reactor', x: offset, y: 0 };
+    ws.send(JSON.stringify({ type: 'build', module }));
+    showNotification('Reactor module added!', 'success');
+    triggerShake(10, 300);
   });
 
   // Add warp drive module handler

@@ -62,7 +62,11 @@ const ITEMS = {
   engine: { cost: 50, type: 'module', id: 'engine' },
   cargo:  { cost: 30, type: 'module', id: 'cargo' },
   weapon: { cost: 70, type: 'module', id: 'weapon' },
-  shield: { cost: 60, type: 'module', id: 'shield' }
+  shield: { cost: 60, type: 'module', id: 'shield' },
+  reactor: { cost: 120, type: 'module', id: 'reactor' },
+  life_support: { cost: 45, type: 'module', id: 'life_support' },
+  sensor: { cost: 80, type: 'module', id: 'sensor' },
+  thruster: { cost: 25, type: 'module', id: 'thruster' }
 };
 
 // Component effect definitions
@@ -82,6 +86,22 @@ const COMPONENT_EFFECTS = {
   shield: {
     healthBonus: 100,
     regenBonus: 2
+  },
+  reactor: {
+    powerGeneration: 10,
+    efficiencyBonus: 0.15
+  },
+  life_support: {
+    crewEfficiency: 0.2,
+    systemStability: 0.1
+  },
+  sensor: {
+    detectionRange: 50,
+    scanAccuracy: 0.25
+  },
+  thruster: {
+    maneuverability: 0.4,
+    rotationSpeed: 0.3
   }
 };
 
@@ -154,13 +174,44 @@ function calculateShipProperties(player) {
     maxHealth = 100 + (shields * COMPONENT_EFFECTS.shield.healthBonus);
   }
 
+  // New component effects
+  let powerGeneration = 0;
+  let detectionRange = BASE_COLLECTION_RANGE;
+  let maneuverability = 1.0;
+
+  if (componentCounts.reactor) {
+    const reactors = componentCounts.reactor;
+    powerGeneration = reactors * COMPONENT_EFFECTS.reactor.powerGeneration;
+  }
+
+  if (componentCounts.sensor) {
+    const sensors = componentCounts.sensor;
+    detectionRange = BASE_COLLECTION_RANGE + (sensors * COMPONENT_EFFECTS.sensor.detectionRange);
+  }
+
+  if (componentCounts.thruster) {
+    const thrusters = componentCounts.thruster;
+    maneuverability = 1.0 + (thrusters * COMPONENT_EFFECTS.thruster.maneuverability);
+  }
+
+  // Life support affects overall ship efficiency
+  let systemEfficiency = 1.0;
+  if (componentCounts.life_support) {
+    const lifeSupportModules = componentCounts.life_support;
+    systemEfficiency = 1.0 + (lifeSupportModules * COMPONENT_EFFECTS.life_support.crewEfficiency);
+  }
+
   return {
-    speed: Math.round(speed * 100) / 100,
-    cargoCapacity,
-    collectionRange,
+    speed: Math.round(speed * maneuverability * 100) / 100,
+    cargoCapacity: Math.round(cargoCapacity * systemEfficiency),
+    collectionRange: Math.max(collectionRange, detectionRange),
     maxHealth,
     damage,
     weaponRange,
+    powerGeneration,
+    detectionRange,
+    maneuverability,
+    systemEfficiency,
     componentCounts
   };
 }
@@ -685,6 +736,91 @@ wss.on('connection', async (ws) => {
         }
         
         ws.send(JSON.stringify({ type: 'resources', resources: player.resources }));
+      }
+      
+    } else if (data.type === 'apply_ship_design') {
+      // Handle ship design application from editor
+      if (!player || !data.modules || !Array.isArray(data.modules)) {
+        return;
+      }
+      
+      try {
+        // Calculate total cost of the design
+        let totalCost = 0;
+        const modulesList = [];
+        
+        for (const module of data.modules) {
+          const item = ITEMS[module.id];
+          if (item && item.type === 'module') {
+            totalCost += item.cost;
+            modulesList.push({
+              id: module.id,
+              x: module.x || 0,
+              y: module.y || 0,
+              rotation: module.rotation || 0
+            });
+          }
+        }
+        
+        // Check if player can afford the design
+        if (player.resources < totalCost) {
+          ws.send(JSON.stringify({
+            type: 'error',
+            message: `Insufficient resources. Need ${totalCost - player.resources} more credits.`
+          }));
+          return;
+        }
+        
+        // Apply the design
+        player.resources -= totalCost;
+        player.modules = [{ id: 'hull', x: 0, y: 0 }]; // Keep core hull
+        player.modules.push(...modulesList);
+        player.stats.totalModulesBuilt += modulesList.length;
+        
+        // Update ship properties
+        const properties = updateShipProperties(player);
+        
+        // Save to database - clear existing modules first
+        // Note: For now, we'll rely on the fact that applying a design replaces the current ship
+        for (const module of player.modules) {
+          const item = ITEMS[module.id] || { type: 'module' };
+          await db.addShipModule(player.id, module.id, item.type, module.x, module.y);
+        }
+        
+        await db.updatePlayerStats(player.id, {
+          resources: player.resources,
+          totalModulesBuilt: player.stats.totalModulesBuilt
+        });
+        
+        // Send updates to client
+        ws.send(JSON.stringify({
+          type: 'shipProperties',
+          properties: properties
+        }));
+        
+        ws.send(JSON.stringify({
+          type: 'resources',
+          resources: player.resources
+        }));
+        
+        ws.send(JSON.stringify({
+          type: 'message',
+          message: `Ship design "${data.designName || 'Custom Design'}" applied successfully!`,
+          category: 'success'
+        }));
+        
+        // Check achievements
+        const achievements = await checkAchievements(player);
+        if (achievements.length > 0) {
+          ws.send(JSON.stringify({ type: 'achievements', achievements }));
+        }
+        
+      } catch (error) {
+        console.error('Error applying ship design:', error);
+        ws.send(JSON.stringify({
+          type: 'error',
+          message: 'Failed to apply ship design. Please try again.'
+        }));
       }
     }
   });
