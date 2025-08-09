@@ -1,0 +1,40 @@
+html, body {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: #010a16;
+  font-family: sans-serif;
+  color: #fff;
+}
+
+#game {
+  display: block;
+  width: 100vw;
+  height: 100vh;
+  background: radial-gradient(circle at center, #0a1931 0%, #010a16 100%);
+}
+
+#hud {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+#hud button {
+  background: #1d3751;
+  border: none;
+  padding: 6px 12px;
+  color: #fff;
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: 14px;
+  transition: background 0.2s;
+}
+
+#hud button:hover {
+  background: #275077;
+}
