@@ -24,5 +24,7 @@ module.exports = {
     }
   ],
   verbose: true,
-  testTimeout: 10000
+  testTimeout: 10000,
+  // Fix for Node.js 16 compatibility with Jest
+  maxWorkers: process.env.NODE_ENV === 'ci' || process.versions.node.startsWith('16') ? 1 : '50%'
 };
