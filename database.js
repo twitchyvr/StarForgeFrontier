@@ -330,6 +330,162 @@ class Database {
         quantity_delivered INTEGER DEFAULT 0,
         PRIMARY KEY (contract_id, ore_type),
         FOREIGN KEY (contract_id) REFERENCES delivery_contracts (id)
+      )`,
+
+      // ===== FACTION SYSTEM TABLES =====
+
+      // Factions table (updated for new faction system)
+      `CREATE TABLE IF NOT EXISTS factions (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        type TEXT NOT NULL,
+        config TEXT NOT NULL, -- JSON data for faction configuration
+        resources TEXT NOT NULL, -- JSON data for faction resources
+        territory TEXT NOT NULL, -- JSON array of controlled sectors
+        allies TEXT NOT NULL, -- JSON array of allied faction IDs
+        enemies TEXT NOT NULL, -- JSON array of enemy faction IDs
+        home_base TEXT, -- Home sector coordinates
+        current_strategy TEXT DEFAULT 'EXPANSION',
+        stats TEXT NOT NULL, -- JSON data for faction statistics
+        updated_at INTEGER NOT NULL
+      )`,
+
+      // Faction relationships
+      `CREATE TABLE IF NOT EXISTS faction_relationships (
+        faction_id TEXT NOT NULL,
+        target_faction_id TEXT NOT NULL,
+        relationship_type TEXT NOT NULL, -- 'ALLIED', 'ENEMY', 'NEUTRAL'
+        relationship_strength REAL DEFAULT 0.5,
+        last_updated DATETIME DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (faction_id, target_faction_id),
+        FOREIGN KEY (faction_id) REFERENCES factions (id),
+        FOREIGN KEY (target_faction_id) REFERENCES factions (id)
+      )`,
+
+      // Faction fleets
+      `CREATE TABLE IF NOT EXISTS faction_fleets (
+        fleet_id TEXT PRIMARY KEY,
+        faction_id TEXT NOT NULL,
+        sector_x INTEGER NOT NULL,
+        sector_y INTEGER NOT NULL,
+        position_x REAL NOT NULL,
+        position_y REAL NOT NULL,
+        behavior_type TEXT NOT NULL,
+        is_active BOOLEAN DEFAULT 1,
+        is_in_combat BOOLEAN DEFAULT 0,
+        morale REAL DEFAULT 100,
+        fuel REAL DEFAULT 100,
+        supplies REAL DEFAULT 100,
+        alert_level INTEGER DEFAULT 0,
+        mission_progress REAL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        last_update INTEGER DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (faction_id) REFERENCES factions (id)
+      )`,
+
+      // Faction ships
+      `CREATE TABLE IF NOT EXISTS faction_ships (
+        ship_id TEXT PRIMARY KEY,
+        fleet_id TEXT NOT NULL,
+        ship_class TEXT NOT NULL,
+        ship_name TEXT NOT NULL,
+        health REAL NOT NULL,
+        max_health REAL NOT NULL,
+        position_x REAL NOT NULL,
+        position_y REAL NOT NULL,
+        is_alive BOOLEAN DEFAULT 1,
+        is_in_combat BOOLEAN DEFAULT 0,
+        damage REAL NOT NULL,
+        speed REAL NOT NULL,
+        range REAL NOT NULL,
+        experience INTEGER DEFAULT 0,
+        kills INTEGER DEFAULT 0,
+        FOREIGN KEY (fleet_id) REFERENCES faction_fleets (fleet_id)
+      )`,
+
+      // Player reputation with factions
+      `CREATE TABLE IF NOT EXISTS faction_player_reputation (
+        player_id TEXT NOT NULL,
+        faction_id TEXT NOT NULL,
+        reputation REAL DEFAULT 0, -- -100 to 100
+        last_updated DATETIME DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (player_id, faction_id),
+        FOREIGN KEY (player_id) REFERENCES players (id),
+        FOREIGN KEY (faction_id) REFERENCES factions (id)
+      )`,
+
+      // Reputation history for tracking changes
+      `CREATE TABLE IF NOT EXISTS faction_reputation_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        player_id TEXT NOT NULL,
+        faction_id TEXT NOT NULL,
+        action TEXT NOT NULL,
+        reputation_change REAL NOT NULL,
+        reason TEXT,
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (player_id) REFERENCES players (id),
+        FOREIGN KEY (faction_id) REFERENCES factions (id)
+      )`,
+
+      // Player reputation table (alias for faction_player_reputation)
+      `CREATE TABLE IF NOT EXISTS player_reputation (
+        player_id TEXT NOT NULL,
+        faction_id TEXT NOT NULL,
+        reputation REAL DEFAULT 0, -- -100 to 100
+        updated_at INTEGER DEFAULT (strftime('%s', 'now') * 1000),
+        PRIMARY KEY (player_id, faction_id),
+        FOREIGN KEY (player_id) REFERENCES players (id),
+        FOREIGN KEY (faction_id) REFERENCES factions (id)
+      )`,
+
+      // Faction territory table (alias for faction_territories)
+      `CREATE TABLE IF NOT EXISTS faction_territory (
+        faction_id TEXT NOT NULL,
+        sector_x INTEGER NOT NULL,
+        sector_y INTEGER NOT NULL,
+        control_level REAL DEFAULT 1.0, -- 0.0 to 1.0
+        last_contested INTEGER DEFAULT (strftime('%s', 'now') * 1000),
+        PRIMARY KEY (faction_id, sector_x, sector_y),
+        FOREIGN KEY (faction_id) REFERENCES factions (id)
+      )`,
+
+      // Faction controlled territories
+      `CREATE TABLE IF NOT EXISTS faction_territories (
+        faction_id TEXT NOT NULL,
+        sector_x INTEGER NOT NULL,
+        sector_y INTEGER NOT NULL,
+        control_level REAL DEFAULT 0.5, -- 0.0 to 1.0
+        established_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        last_updated DATETIME DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (faction_id, sector_x, sector_y),
+        FOREIGN KEY (faction_id) REFERENCES factions (id)
+      )`,
+
+      // Faction events and history
+      `CREATE TABLE IF NOT EXISTS faction_events (
+        id TEXT PRIMARY KEY,
+        faction_id TEXT NOT NULL,
+        event_type TEXT NOT NULL,
+        event_data TEXT, -- JSON data
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (faction_id) REFERENCES factions (id)
+      )`,
+
+      // Combat engagements between factions/players
+      `CREATE TABLE IF NOT EXISTS faction_combat_history (
+        id TEXT PRIMARY KEY,
+        attacker_type TEXT NOT NULL, -- 'FACTION' or 'PLAYER'
+        attacker_id TEXT NOT NULL,
+        defender_type TEXT NOT NULL, -- 'FACTION' or 'PLAYER'  
+        defender_id TEXT NOT NULL,
+        sector_x INTEGER NOT NULL,
+        sector_y INTEGER NOT NULL,
+        victor TEXT, -- 'ATTACKER' or 'DEFENDER'
+        duration INTEGER, -- milliseconds
+        damage_dealt INTEGER,
+        ships_lost INTEGER,
+        started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        ended_at DATETIME
       )`
     ];
 
@@ -1270,6 +1426,340 @@ class Database {
        WHERE contract_id = ? AND ore_type = ?`,
       [quantityDelivered, contractId, oreType]
     );
+  }
+
+  // ===== FACTION SYSTEM METHODS =====
+
+  /**
+   * Create or update a faction
+   */
+  async saveFaction(factionData) {
+    const result = await this.run(
+      `INSERT OR REPLACE INTO factions 
+       (id, name, type, config, resources, territory, allies, enemies, 
+        home_base, current_strategy, stats, updated_at) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        factionData.id,
+        factionData.name,
+        factionData.type,
+        factionData.config,
+        factionData.resources,
+        factionData.territory,
+        factionData.allies,
+        factionData.enemies,
+        factionData.homeBase,
+        factionData.currentStrategy,
+        factionData.stats,
+        factionData.updated_at
+      ]
+    );
+    return result;
+  }
+
+  /**
+   * Get faction by ID
+   */
+  async getFaction(factionId) {
+    return await this.get(
+      'SELECT * FROM factions WHERE id = ?',
+      [factionId]
+    );
+  }
+
+  /**
+   * Get all active factions
+   */
+  async getAllFactions() {
+    return await this.all(
+      'SELECT * FROM factions WHERE is_active = 1 ORDER BY name'
+    );
+  }
+
+  /**
+   * Create or update NPC fleet
+   */
+  async saveNPCFleet(fleetData) {
+    const result = await this.run(
+      `INSERT OR REPLACE INTO npc_fleets 
+       (id, faction_id, name, ships, current_sector, destination, 
+        mission, mission_data, resources, status, created_at, updated_at) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        fleetData.id,
+        fleetData.faction_id,
+        fleetData.name,
+        fleetData.ships,
+        fleetData.current_sector,
+        fleetData.destination,
+        fleetData.mission,
+        fleetData.mission_data,
+        fleetData.resources,
+        fleetData.status,
+        fleetData.created_at,
+        fleetData.updated_at
+      ]
+    );
+    return result;
+  }
+
+  /**
+   * Get NPC fleets by faction
+   */
+  async getFactionFleets(factionId, status = null) {
+    let sql = 'SELECT * FROM npc_fleets WHERE faction_id = ?';
+    let params = [factionId];
+
+    if (status) {
+      sql += ' AND status = ?';
+      params.push(status);
+    }
+
+    sql += ' ORDER BY created_at DESC';
+    return await this.all(sql, params);
+  }
+
+  /**
+   * Get all active NPC fleets
+   */
+  async getAllNPCFleets() {
+    return await this.all(
+      `SELECT * FROM npc_fleets 
+       WHERE status IN ('idle', 'moving', 'engaged', 'returning') 
+       ORDER BY created_at DESC`
+    );
+  }
+
+  /**
+   * Update NPC fleet status
+   */
+  async updateFleetStatus(fleetId, status) {
+    await this.run(
+      'UPDATE npc_fleets SET status = ?, updated_at = ? WHERE id = ?',
+      [status, Date.now(), fleetId]
+    );
+  }
+
+  /**
+   * Get player reputation with faction
+   */
+  async getPlayerReputation(playerId, factionId) {
+    const result = await this.get(
+      'SELECT reputation FROM player_reputation WHERE player_id = ? AND faction_id = ?',
+      [playerId, factionId]
+    );
+    return result ? result.reputation : 0;
+  }
+
+  /**
+   * Update player reputation with faction
+   */
+  async updatePlayerReputation(playerId, factionId, reputation) {
+    await this.run(
+      `INSERT OR REPLACE INTO player_reputation 
+       (player_id, faction_id, reputation, updated_at) 
+       VALUES (?, ?, ?, ?)`,
+      [playerId, factionId, reputation, Date.now()]
+    );
+  }
+
+  /**
+   * Get all player reputations
+   */
+  async getPlayerReputations(playerId) {
+    return await this.all(
+      `SELECT pr.*, f.name as faction_name, f.type as faction_type 
+       FROM player_reputation pr 
+       LEFT JOIN factions f ON pr.faction_id = f.id 
+       WHERE pr.player_id = ?`,
+      [playerId]
+    );
+  }
+
+  /**
+   * Record reputation change event
+   */
+  async recordReputationChange(playerId, factionId, change, reason) {
+    await this.run(
+      `INSERT INTO faction_reputation_history 
+       (player_id, faction_id, reputation_change, reason, timestamp) 
+       VALUES (?, ?, ?, ?, ?)`,
+      [playerId, factionId, change, reason, Date.now()]
+    );
+  }
+
+  /**
+   * Get reputation history for player
+   */
+  async getReputationHistory(playerId, factionId = null, limit = 50) {
+    let sql = `SELECT re.*, f.name as faction_name 
+               FROM faction_reputation_history re 
+               LEFT JOIN factions f ON re.faction_id = f.id 
+               WHERE re.player_id = ?`;
+    let params = [playerId];
+
+    if (factionId) {
+      sql += ' AND re.faction_id = ?';
+      params.push(factionId);
+    }
+
+    sql += ' ORDER BY re.timestamp DESC LIMIT ?';
+    params.push(limit);
+
+    return await this.all(sql, params);
+  }
+
+  /**
+   * Get factions controlling a sector
+   */
+  async getFactionsInSector(sectorX, sectorY) {
+    return await this.all(
+      `SELECT f.*, ft.control_level 
+       FROM faction_territory ft 
+       LEFT JOIN factions f ON ft.faction_id = f.id 
+       WHERE ft.sector_x = ? AND ft.sector_y = ?`,
+      [sectorX, sectorY]
+    );
+  }
+
+  /**
+   * Set faction territory control
+   */
+  async setFactionTerritory(factionId, sectorX, sectorY, controlLevel = 1.0) {
+    await this.run(
+      `INSERT OR REPLACE INTO faction_territory 
+       (faction_id, sector_x, sector_y, control_level, last_contested) 
+       VALUES (?, ?, ?, ?, ?)`,
+      [factionId, sectorX, sectorY, controlLevel, Date.now()]
+    );
+  }
+
+  /**
+   * Remove faction territory control
+   */
+  async removeFactionTerritory(factionId, sectorX, sectorY) {
+    await this.run(
+      'DELETE FROM faction_territory WHERE faction_id = ? AND sector_x = ? AND sector_y = ?',
+      [factionId, sectorX, sectorY]
+    );
+  }
+
+  /**
+   * Get faction territories
+   */
+  async getFactionTerritories(factionId) {
+    return await this.all(
+      'SELECT * FROM faction_territory WHERE faction_id = ? ORDER BY control_level DESC',
+      [factionId]
+    );
+  }
+
+  /**
+   * Record faction event
+   */
+  async recordFactionEvent(eventData) {
+    await this.run(
+      `INSERT INTO faction_events 
+       (id, faction_id, event_type, event_data, sector_id, target_faction_id, created_at, expires_at) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        eventData.id,
+        eventData.faction_id,
+        eventData.event_type,
+        eventData.event_data,
+        eventData.sector_id || null,
+        eventData.target_faction_id || null,
+        eventData.created_at,
+        eventData.expires_at || null
+      ]
+    );
+  }
+
+  /**
+   * Get faction events
+   */
+  async getFactionEvents(factionId = null, eventType = null, limit = 50) {
+    let sql = 'SELECT * FROM faction_events WHERE 1=1';
+    let params = [];
+
+    if (factionId) {
+      sql += ' AND faction_id = ?';
+      params.push(factionId);
+    }
+
+    if (eventType) {
+      sql += ' AND event_type = ?';
+      params.push(eventType);
+    }
+
+    sql += ' ORDER BY created_at DESC LIMIT ?';
+    params.push(limit);
+
+    return await this.all(sql, params);
+  }
+
+  /**
+   * Update faction diplomacy
+   */
+  async updateFactionDiplomacy(factionA, factionB, relationType, strength) {
+    await this.run(
+      `INSERT OR REPLACE INTO faction_diplomacy 
+       (faction_a, faction_b, relation_type, relation_strength, last_change) 
+       VALUES (?, ?, ?, ?, ?)`,
+      [factionA, factionB, relationType, strength, Date.now()]
+    );
+
+    // Also update reverse relationship
+    await this.run(
+      `INSERT OR REPLACE INTO faction_diplomacy 
+       (faction_a, faction_b, relation_type, relation_strength, last_change) 
+       VALUES (?, ?, ?, ?, ?)`,
+      [factionB, factionA, relationType, strength, Date.now()]
+    );
+  }
+
+  /**
+   * Get faction relationships
+   */
+  async getFactionRelationships(factionId) {
+    return await this.all(
+      `SELECT fd.*, f.name as target_faction_name, f.type as target_faction_type 
+       FROM faction_diplomacy fd 
+       LEFT JOIN factions f ON fd.faction_b = f.id 
+       WHERE fd.faction_a = ?`,
+      [factionId]
+    );
+  }
+
+  /**
+   * Get faction statistics
+   */
+  async getFactionStats() {
+    const factionCount = await this.get('SELECT COUNT(*) as count FROM factions');
+    const fleetCount = await this.get('SELECT COUNT(*) as count FROM faction_fleets WHERE is_active = 1');
+    const territoryCount = await this.get('SELECT COUNT(*) as count FROM faction_territory');
+    const reputationEvents = await this.get('SELECT COUNT(*) as count FROM faction_reputation_history WHERE timestamp > ?', [Date.now() - 86400000]); // Last 24 hours
+
+    const factionTypes = await this.all(
+      'SELECT type, COUNT(*) as count FROM factions GROUP BY type'
+    );
+
+    const territoryDistribution = await this.all(
+      `SELECT f.name, f.type, COUNT(ft.faction_id) as territory_count 
+       FROM factions f 
+       LEFT JOIN faction_territory ft ON f.id = ft.faction_id 
+       GROUP BY f.id 
+       ORDER BY territory_count DESC`
+    );
+
+    return {
+      totalFactions: factionCount.count,
+      totalFleets: fleetCount.count,
+      totalTerritories: territoryCount.count,
+      recentReputationEvents: reputationEvents.count,
+      factionTypes,
+      territoryDistribution
+    };
   }
 
   /**

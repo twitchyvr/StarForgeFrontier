@@ -21,6 +21,7 @@ const { ORE_TYPES } = require('./galaxy/Sector');
 const { TradingStation } = require('./trading/TradingStation');
 const MarketSystem = require('./trading/MarketSystem');
 const { ContractSystem } = require('./trading/ContractSystem');
+const { FactionOrchestrator } = require('./factions/FactionOrchestrator');
 
 const app = express();
 const server = http.createServer(app);
@@ -41,6 +42,9 @@ let warpSystem = null;
 let marketSystem = null;
 let contractSystem = null;
 const tradingStations = new Map(); // Active trading stations by sector
+
+// Initialize faction system
+let factionOrchestrator = null;
 
 // In-memory state for active gameplay
 const activePlayers = new Map(); // WebSocket connections
@@ -229,6 +233,11 @@ async function initializeServer() {
     marketSystem = new MarketSystem(db);
     contractSystem = new ContractSystem(db);
     console.log('Trading systems initialized successfully');
+    
+    // Initialize faction system
+    factionOrchestrator = new FactionOrchestrator(db);
+    await factionOrchestrator.initialize();
+    console.log('Faction system initialized successfully');
     
     // Initialize starting trading stations
     await initializeStartingTradingStations();
@@ -809,6 +818,301 @@ app.get('/api/trading/stats', async (req, res) => {
   }
 });
 
+// ===== FACTION SYSTEM API ENDPOINTS =====
+
+// Get all factions summary
+app.get('/api/factions', async (req, res) => {
+  try {
+    if (!factionOrchestrator) {
+      return res.status(503).json({ error: 'Faction system not initialized' });
+    }
+    
+    const factions = {};
+    for (const [factionId, faction] of factionOrchestrator.factions.entries()) {
+      factions[factionId] = {
+        id: faction.id,
+        name: faction.name,
+        type: faction.type,
+        territoryCount: faction.territory.size,
+        fleetCount: faction.fleets.size,
+        currentStrategy: faction.currentStrategy,
+        homeBase: faction.homeBase,
+        typeConfig: faction.typeConfig
+      };
+    }
+    
+    res.json(factions);
+  } catch (error) {
+    console.error('Error fetching factions:', error);
+    res.status(500).json({ error: 'Failed to fetch faction data' });
+  }
+});
+
+// Get specific faction details
+app.get('/api/factions/:factionId', async (req, res) => {
+  try {
+    const { factionId } = req.params;
+    
+    if (!factionOrchestrator) {
+      return res.status(503).json({ error: 'Faction system not initialized' });
+    }
+    
+    const faction = factionOrchestrator.factions.get(factionId);
+    if (!faction) {
+      return res.status(404).json({ error: 'Faction not found' });
+    }
+    
+    res.json({
+      id: faction.id,
+      name: faction.name,
+      type: faction.type,
+      typeConfig: faction.typeConfig,
+      territory: Array.from(faction.territory),
+      fleets: Array.from(faction.fleets.keys()),
+      resources: Object.fromEntries(faction.resources),
+      currentStrategy: faction.currentStrategy,
+      homeBase: faction.homeBase,
+      stats: faction.stats,
+      allies: Array.from(faction.allies),
+      enemies: Array.from(faction.enemies)
+    });
+  } catch (error) {
+    console.error('Error fetching faction details:', error);
+    res.status(500).json({ error: 'Failed to fetch faction details' });
+  }
+});
+
+// Get all fleets summary
+app.get('/api/factions/fleets', async (req, res) => {
+  try {
+    if (!factionOrchestrator) {
+      return res.status(503).json({ error: 'Faction system not initialized' });
+    }
+    
+    const fleets = [];
+    for (const [fleetId, fleet] of factionOrchestrator.allFleets.entries()) {
+      fleets.push({
+        id: fleet.id,
+        factionId: fleet.factionId,
+        factionType: fleet.factionType,
+        shipCount: fleet.ships.length,
+        mission: fleet.mission.type,
+        status: fleet.status,
+        currentSector: fleet.currentSector,
+        position: fleet.position
+      });
+    }
+    
+    res.json(fleets);
+  } catch (error) {
+    console.error('Error fetching fleets:', error);
+    res.status(500).json({ error: 'Failed to fetch fleet data' });
+  }
+});
+
+// Get fleets in specific sector
+app.get('/api/factions/fleets/sector/:sectorX/:sectorY', async (req, res) => {
+  try {
+    const { sectorX, sectorY } = req.params;
+    const sectorId = `${sectorX},${sectorY}`;
+    
+    if (!factionOrchestrator) {
+      return res.status(503).json({ error: 'Faction system not initialized' });
+    }
+    
+    const fleetsInSector = factionOrchestrator.getFleetsInSector(sectorId);
+    res.json(fleetsInSector);
+    
+  } catch (error) {
+    console.error('Error fetching sector fleets:', error);
+    res.status(500).json({ error: 'Failed to fetch sector fleet data' });
+  }
+});
+
+// Get player reputation with all factions
+app.get('/api/factions/reputation/:playerId', async (req, res) => {
+  try {
+    const { playerId } = req.params;
+    
+    if (!factionOrchestrator) {
+      return res.status(503).json({ error: 'Faction system not initialized' });
+    }
+    
+    const reputations = factionOrchestrator.getPlayerReputations(playerId);
+    res.json(reputations);
+  } catch (error) {
+    console.error('Error fetching player reputation:', error);
+    res.status(500).json({ error: 'Failed to fetch reputation data' });
+  }
+});
+
+// Get player reputation with specific faction
+app.get('/api/factions/reputation/:playerId/:factionId', async (req, res) => {
+  try {
+    const { playerId, factionId } = req.params;
+    
+    if (!factionOrchestrator) {
+      return res.status(503).json({ error: 'Faction system not initialized' });
+    }
+    
+    const faction = factionOrchestrator.factions.get(factionId);
+    if (!faction) {
+      return res.status(404).json({ error: 'Faction not found' });
+    }
+    
+    const reputation = faction.getPlayerReputation(playerId);
+    const level = faction.getReputationLevel(playerId);
+    
+    res.json({
+      reputation,
+      level: level.level,
+      name: level.name,
+      color: level.color,
+      min: level.min,
+      max: level.max
+    });
+  } catch (error) {
+    console.error('Error fetching specific faction reputation:', error);
+    res.status(500).json({ error: 'Failed to fetch faction reputation' });
+  }
+});
+
+// Get player reputation history
+app.get('/api/factions/reputation-history/:playerId', async (req, res) => {
+  try {
+    const { playerId } = req.params;
+    const limit = parseInt(req.query.limit) || 20;
+    
+    if (!factionOrchestrator) {
+      return res.status(503).json({ error: 'Faction system not initialized' });
+    }
+    
+    const history = await db.getReputationHistory(playerId, null, limit);
+    res.json(history);
+  } catch (error) {
+    console.error('Error fetching reputation history:', error);
+    res.status(500).json({ error: 'Failed to fetch reputation history' });
+  }
+});
+
+// Check if player can interact with faction
+app.get('/api/factions/interaction/:playerId/:factionId/:interactionType', async (req, res) => {
+  try {
+    const { playerId, factionId, interactionType } = req.params;
+    
+    if (!factionOrchestrator) {
+      return res.status(503).json({ error: 'Faction system not initialized' });
+    }
+    
+    const faction = factionOrchestrator.factions.get(factionId);
+    if (!faction) {
+      return res.status(404).json({ error: 'Faction not found' });
+    }
+    
+    const reputation = faction.getPlayerReputation(playerId);
+    const level = faction.getReputationLevel(playerId);
+    
+    // Basic interaction rules
+    let canInteract = true;
+    if (level.level === 'HOSTILE') {
+      canInteract = false;
+    }
+    
+    res.json({
+      canInteract,
+      interactionType,
+      currentStanding: level.level,
+      reputation: reputation
+    });
+  } catch (error) {
+    console.error('Error checking faction interaction:', error);
+    res.status(500).json({ error: 'Failed to check interaction permission' });
+  }
+});
+
+// Get faction system status and statistics
+app.get('/api/factions/system-status', async (req, res) => {
+  try {
+    if (!factionOrchestrator) {
+      return res.status(503).json({ error: 'Faction system not initialized' });
+    }
+    
+    const status = factionOrchestrator.getSystemStats();
+    res.json(status);
+  } catch (error) {
+    console.error('Error fetching faction system status:', error);
+    res.status(500).json({ error: 'Failed to fetch system status' });
+  }
+});
+
+// Trigger faction event (admin/debug endpoint)
+app.post('/api/factions/events', async (req, res) => {
+  try {
+    const { playerId, factionId, eventType, eventData } = req.body;
+    
+    if (!factionOrchestrator) {
+      return res.status(503).json({ error: 'Faction system not initialized' });
+    }
+    
+    // Basic validation
+    if (!playerId || !eventType) {
+      return res.status(400).json({ error: 'Missing required parameters: playerId, eventType' });
+    }
+    
+    // Queue the event
+    factionOrchestrator.queueEvent(eventType, {
+      playerId,
+      factionId,
+      ...eventData
+    });
+    
+    res.json({
+      success: true,
+      message: `Event ${eventType} queued successfully`,
+      event: {
+        type: eventType,
+        playerId,
+        factionId,
+        data: eventData
+      }
+    });
+  } catch (error) {
+    console.error('Error triggering faction event:', error);
+    res.status(500).json({ error: 'Failed to trigger faction event' });
+  }
+});
+
+// Get trade price modifiers for player with factions
+app.get('/api/factions/trade-modifiers/:playerId', async (req, res) => {
+  try {
+    const { playerId } = req.params;
+    
+    if (!factionOrchestrator) {
+      return res.status(503).json({ error: 'Faction system not initialized' });
+    }
+    
+    const modifiers = {};
+    
+    // Get modifiers for each faction
+    for (const [factionId, faction] of factionOrchestrator.factions.entries()) {
+      const priceModifier = factionOrchestrator.reputationManager.getTradePriceModifier(playerId, factionId);
+      const standing = factionOrchestrator.reputationManager.getPlayerStanding(playerId, factionId);
+      
+      modifiers[factionId] = {
+        factionName: faction.name,
+        priceModifier,
+        standing: standing.level,
+        canTrade: standing.effects.canTrade
+      };
+    }
+    
+    res.json(modifiers);
+  } catch (error) {
+    console.error('Error fetching trade modifiers:', error);
+    res.status(500).json({ error: 'Failed to fetch trade modifiers' });
+  }
+});
+
 // Health check endpoint for monitoring and load balancers
 app.get('/api/health', (req, res) => {
   const health = {
@@ -1356,6 +1660,12 @@ wss.on('connection', async (ws) => {
         const properties = updateShipProperties(player);
         
         activePlayers.set(ws, player);
+        
+        // Add player to faction system
+        if (factionOrchestrator) {
+          factionOrchestrator.addPlayer(player.id, player);
+        }
+        
         sessionId = await db.startGameSession(player.id);
         playerSessions.set(player.id, {
           sessionId,
@@ -1588,6 +1898,11 @@ wss.on('connection', async (ws) => {
     if (player) {
       activePlayers.delete(ws);
       broadcast({ type: 'player_disconnect', id: player.id });
+      
+      // Remove from faction system
+      if (factionOrchestrator) {
+        factionOrchestrator.removePlayer(player.id);
+      }
       
       // Remove from sector system
       if (sectorManager) {
@@ -1930,6 +2245,11 @@ function startGameLoop() {
       if (Math.abs(oldX - p.x) > 0.1 || Math.abs(oldY - p.y) > 0.1) {
         const distance = Math.sqrt((p.x - oldX) ** 2 + (p.y - oldY) ** 2);
         p.stats.totalDistanceTraveled += distance;
+        
+        // Update player position in faction system
+        if (factionOrchestrator) {
+          factionOrchestrator.updatePlayer(p.id, p);
+        }
       }
     });
     
@@ -2089,6 +2409,11 @@ function startGameLoop() {
       await updateTradingSystems();
     }
     
+    // Update faction system
+    if (factionOrchestrator) {
+      await factionOrchestrator.update();
+    }
+    
   }, TICK_INTERVAL);
 }
 
@@ -2129,6 +2454,11 @@ process.on('SIGINT', async () => {
   // Save all loaded sector data
   if (sectorManager) {
     await sectorManager.saveAllSectors();
+  }
+  
+  // Shutdown faction system
+  if (factionOrchestrator) {
+    await factionOrchestrator.shutdown();
   }
   
   await db.close();
