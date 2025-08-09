@@ -15,7 +15,7 @@ const http = require('http');
 const WebSocket = require('ws');
 const { v4: uuidv4 } = require('uuid');
 const Database = require('./database');
-const SectorManager = require('./galaxy/SectorManager');
+const EnhancedSectorManager = require('./galaxy/EnhancedSectorManager');
 const WarpSystem = require('./galaxy/WarpSystem');
 const { ORE_TYPES } = require('./galaxy/Sector');
 const { TradingStation } = require('./trading/TradingStation');
@@ -37,7 +37,7 @@ app.use(express.static('public'));
 const db = new Database();
 
 // Initialize galaxy systems
-let sectorManager = null;
+let sectorManager = null; // Now using EnhancedSectorManager with hazard system
 let warpSystem = null;
 
 // Initialize trading systems
@@ -232,10 +232,11 @@ async function initializeServer() {
     await db.initialize();
     console.log('Database initialized successfully');
     
-    // Initialize galaxy systems
-    sectorManager = new SectorManager(db);
+    // Initialize galaxy systems with enhanced hazard support
+    sectorManager = new EnhancedSectorManager(db, skillSystem);
+    await sectorManager.initialize();
     warpSystem = new WarpSystem(db, sectorManager);
-    console.log('Galaxy systems initialized successfully');
+    console.log('Enhanced galaxy systems with hazard support initialized successfully');
     
     // Initialize trading systems
     marketSystem = new MarketSystem(db);
@@ -1264,25 +1265,37 @@ function broadcastState() {
   
   // Get ores from current sectors instead of global ores
   let currentOres = ores; // Legacy fallback
+  let currentHazards = []; // Environmental hazards for client display
   
   if (sectorManager) {
-    // Collect ores from all loaded sectors
+    // Collect ores and hazards from all loaded sectors
     const allSectorOres = [];
-    for (const sector of sectorManager.loadedSectors.values()) {
-      if (sector.isLoaded) {
-        allSectorOres.push(...sector.ores);
+    const allSectorHazards = [];
+    
+    // Handle both legacy SectorManager and EnhancedSectorManager
+    const sectors = sectorManager.loadedSectors || sectorManager.activeSectors;
+    if (sectors) {
+      for (const sector of sectors.values()) {
+        if (sector.isLoaded) {
+          allSectorOres.push(...sector.ores);
+          if (sector.environmentalHazards) {
+            allSectorHazards.push(...sector.environmentalHazards);
+          }
+        }
       }
     }
     
     if (allSectorOres.length > 0) {
       currentOres = allSectorOres;
     }
+    currentHazards = allSectorHazards;
   }
   
   const state = {
     type: 'update',
     players: playerList,
-    ores: currentOres
+    ores: currentOres,
+    hazards: currentHazards
   };
   broadcast(state);
 }
@@ -2746,10 +2759,10 @@ function startGameLoop() {
     }
     
     // Update player positions
-    activePlayers.forEach((p) => {
+    for (const [ws, p] of activePlayers.entries()) {
       // Skip movement if dead
       if (p.isDead) {
-        return;
+        continue;
       }
       
       // Update ship properties if they don't exist or components changed
@@ -2782,8 +2795,17 @@ function startGameLoop() {
         if (factionOrchestrator) {
           factionOrchestrator.updatePlayer(p.id, p);
         }
+        
+        // Process hazard effects for player movement
+        if (sectorManager && sectorManager.updatePlayerPosition) {
+          try {
+            await sectorManager.updatePlayerPosition(p.id, p.sectorX || 0, p.sectorY || 0, p.x, p.y);
+          } catch (error) {
+            console.error('Error processing player hazard effects:', error);
+          }
+        }
       }
-    });
+    }
     
     // Handle ore collection (both legacy and sector-based)
     for (const [ws, p] of activePlayers.entries()) {

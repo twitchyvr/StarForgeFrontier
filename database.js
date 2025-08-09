@@ -753,6 +753,126 @@ class Database {
         PRIMARY KEY (guild_id, sector_x, sector_y),
         FOREIGN KEY (guild_id) REFERENCES guilds (id),
         FOREIGN KEY (claimed_by) REFERENCES players (id)
+      )`,
+
+      // ===== ENVIRONMENTAL HAZARDS SYSTEM TABLES =====
+
+      // Player countermeasures and hazard defenses
+      `CREATE TABLE IF NOT EXISTS player_countermeasures (
+        player_id TEXT NOT NULL,
+        countermeasure_id TEXT NOT NULL,
+        acquired_at INTEGER NOT NULL,
+        is_active BOOLEAN DEFAULT 1,
+        upgrade_level INTEGER DEFAULT 1,
+        efficiency REAL DEFAULT 1.0,
+        PRIMARY KEY (player_id, countermeasure_id),
+        FOREIGN KEY (player_id) REFERENCES players (id)
+      )`,
+
+      // Player system health tracking
+      `CREATE TABLE IF NOT EXISTS player_system_health (
+        player_id TEXT NOT NULL,
+        system_name TEXT NOT NULL,
+        health_percentage REAL DEFAULT 1.0,
+        last_repair INTEGER DEFAULT (strftime('%s', 'now') * 1000),
+        repair_count INTEGER DEFAULT 0,
+        PRIMARY KEY (player_id, system_name),
+        FOREIGN KEY (player_id) REFERENCES players (id)
+      )`,
+
+      // Hazard exposure history
+      `CREATE TABLE IF NOT EXISTS hazard_exposure_history (
+        id TEXT PRIMARY KEY,
+        player_id TEXT NOT NULL,
+        hazard_id TEXT NOT NULL,
+        hazard_type TEXT NOT NULL,
+        sector_x INTEGER NOT NULL,
+        sector_y INTEGER NOT NULL,
+        exposure_start INTEGER NOT NULL,
+        exposure_end INTEGER,
+        total_exposure_time INTEGER DEFAULT 0,
+        max_intensity REAL DEFAULT 0,
+        damage_taken INTEGER DEFAULT 0,
+        countermeasures_active TEXT, -- JSON array of active countermeasures
+        FOREIGN KEY (player_id) REFERENCES players (id),
+        FOREIGN KEY (hazard_id) REFERENCES sector_hazards (id)
+      )`,
+
+      // Dynamic hazard events affecting multiple sectors
+      `CREATE TABLE IF NOT EXISTS dynamic_hazard_events (
+        id TEXT PRIMARY KEY,
+        event_type TEXT NOT NULL,
+        event_name TEXT NOT NULL,
+        center_sector_x INTEGER NOT NULL,
+        center_sector_y INTEGER NOT NULL,
+        affected_radius INTEGER NOT NULL,
+        intensity REAL NOT NULL,
+        created_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL,
+        is_active BOOLEAN DEFAULT 1,
+        event_data TEXT, -- JSON data for event-specific information
+        affected_sectors TEXT -- JSON array of affected sector coordinates
+      )`,
+
+      // Player warning history and acknowledgments
+      `CREATE TABLE IF NOT EXISTS player_warning_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        player_id TEXT NOT NULL,
+        warning_type TEXT NOT NULL,
+        hazard_id TEXT,
+        sector_x INTEGER,
+        sector_y INTEGER,
+        warning_level TEXT NOT NULL, -- CRITICAL, HIGH, MEDIUM, LOW, INFO
+        acknowledged BOOLEAN DEFAULT 0,
+        acknowledged_at INTEGER,
+        created_at INTEGER NOT NULL,
+        FOREIGN KEY (player_id) REFERENCES players (id)
+      )`,
+
+      // Hazard countermeasure research and upgrades
+      `CREATE TABLE IF NOT EXISTS countermeasure_research (
+        player_id TEXT NOT NULL,
+        countermeasure_id TEXT NOT NULL,
+        research_progress REAL DEFAULT 0.0,
+        research_points_invested INTEGER DEFAULT 0,
+        is_unlocked BOOLEAN DEFAULT 0,
+        unlocked_at INTEGER,
+        upgrade_level INTEGER DEFAULT 0,
+        PRIMARY KEY (player_id, countermeasure_id),
+        FOREIGN KEY (player_id) REFERENCES players (id)
+      )`,
+
+      // Sector hazard generation patterns and history
+      `CREATE TABLE IF NOT EXISTS sector_hazard_patterns (
+        sector_x INTEGER NOT NULL,
+        sector_y INTEGER NOT NULL,
+        biome_type TEXT NOT NULL,
+        generation_seed INTEGER NOT NULL,
+        last_generated INTEGER NOT NULL,
+        hazard_count INTEGER DEFAULT 0,
+        generation_method TEXT DEFAULT 'procedural',
+        pattern_data TEXT, -- JSON data for generation patterns
+        special_rules TEXT, -- JSON array of applied special rules
+        PRIMARY KEY (sector_x, sector_y)
+      )`,
+
+      // Player hazard statistics and achievements
+      `CREATE TABLE IF NOT EXISTS player_hazard_stats (
+        player_id TEXT PRIMARY KEY,
+        total_hazards_encountered INTEGER DEFAULT 0,
+        total_exposure_time INTEGER DEFAULT 0,
+        total_damage_from_hazards INTEGER DEFAULT 0,
+        hazards_survived INTEGER DEFAULT 0,
+        countermeasures_deployed INTEGER DEFAULT 0,
+        systems_repaired INTEGER DEFAULT 0,
+        critical_warnings_received INTEGER DEFAULT 0,
+        temporal_displacements INTEGER DEFAULT 0,
+        wormhole_transits INTEGER DEFAULT 0,
+        asteroid_collisions_avoided INTEGER DEFAULT 0,
+        radiation_exposure_total REAL DEFAULT 0,
+        most_dangerous_hazard TEXT,
+        longest_exposure_time INTEGER DEFAULT 0,
+        FOREIGN KEY (player_id) REFERENCES players (id)
       )`
     ];
 
@@ -2026,6 +2146,437 @@ class Database {
       recentReputationEvents: reputationEvents.count,
       factionTypes,
       territoryDistribution
+    };
+  }
+
+  // ===== ENVIRONMENTAL HAZARDS SYSTEM METHODS =====
+
+  /**
+   * Add countermeasure to player
+   */
+  async addPlayerCountermeasure(playerId, countermeasureId, upgradeLevel = 1) {
+    const result = await this.run(
+      `INSERT OR REPLACE INTO player_countermeasures 
+       (player_id, countermeasure_id, acquired_at, upgrade_level) 
+       VALUES (?, ?, ?, ?)`,
+      [playerId, countermeasureId, Date.now(), upgradeLevel]
+    );
+    return result;
+  }
+
+  /**
+   * Get player countermeasures
+   */
+  async getPlayerCountermeasures(playerId) {
+    return await this.all(
+      'SELECT * FROM player_countermeasures WHERE player_id = ? AND is_active = 1',
+      [playerId]
+    );
+  }
+
+  /**
+   * Update player system health
+   */
+  async updatePlayerSystemHealth(playerId, systemName, healthPercentage) {
+    await this.run(
+      `INSERT OR REPLACE INTO player_system_health 
+       (player_id, system_name, health_percentage) 
+       VALUES (?, ?, ?)`,
+      [playerId, systemName, Math.max(0, Math.min(1, healthPercentage))]
+    );
+  }
+
+  /**
+   * Get player system health
+   */
+  async getPlayerSystemHealth(playerId) {
+    return await this.all(
+      'SELECT * FROM player_system_health WHERE player_id = ?',
+      [playerId]
+    );
+  }
+
+  /**
+   * Repair player system
+   */
+  async repairPlayerSystem(playerId, systemName, repairAmount = 1.0) {
+    const result = await this.run(
+      `UPDATE player_system_health 
+       SET health_percentage = MIN(1.0, health_percentage + ?), 
+           last_repair = ?, 
+           repair_count = repair_count + 1
+       WHERE player_id = ? AND system_name = ?`,
+      [repairAmount, Date.now(), playerId, systemName]
+    );
+    return result;
+  }
+
+  /**
+   * Record hazard exposure
+   */
+  async recordHazardExposure(exposureData) {
+    await this.run(
+      `INSERT INTO hazard_exposure_history 
+       (id, player_id, hazard_id, hazard_type, sector_x, sector_y, 
+        exposure_start, exposure_end, total_exposure_time, max_intensity, 
+        damage_taken, countermeasures_active) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        exposureData.id,
+        exposureData.player_id,
+        exposureData.hazard_id,
+        exposureData.hazard_type,
+        exposureData.sector_x,
+        exposureData.sector_y,
+        exposureData.exposure_start,
+        exposureData.exposure_end || null,
+        exposureData.total_exposure_time || 0,
+        exposureData.max_intensity || 0,
+        exposureData.damage_taken || 0,
+        JSON.stringify(exposureData.countermeasures_active || [])
+      ]
+    );
+  }
+
+  /**
+   * Update hazard exposure
+   */
+  async updateHazardExposure(exposureId, updateData) {
+    const updates = [];
+    const values = [];
+
+    if (updateData.exposure_end !== undefined) {
+      updates.push('exposure_end = ?');
+      values.push(updateData.exposure_end);
+    }
+    if (updateData.total_exposure_time !== undefined) {
+      updates.push('total_exposure_time = ?');
+      values.push(updateData.total_exposure_time);
+    }
+    if (updateData.max_intensity !== undefined) {
+      updates.push('max_intensity = ?');
+      values.push(updateData.max_intensity);
+    }
+    if (updateData.damage_taken !== undefined) {
+      updates.push('damage_taken = ?');
+      values.push(updateData.damage_taken);
+    }
+
+    if (updates.length > 0) {
+      values.push(exposureId);
+      await this.run(
+        `UPDATE hazard_exposure_history SET ${updates.join(', ')} WHERE id = ?`,
+        values
+      );
+    }
+  }
+
+  /**
+   * Get player hazard exposure history
+   */
+  async getPlayerHazardExposure(playerId, hazardType = null, limit = 50) {
+    let sql = `SELECT * FROM hazard_exposure_history WHERE player_id = ?`;
+    let params = [playerId];
+
+    if (hazardType) {
+      sql += ' AND hazard_type = ?';
+      params.push(hazardType);
+    }
+
+    sql += ' ORDER BY exposure_start DESC LIMIT ?';
+    params.push(limit);
+
+    const exposures = await this.all(sql, params);
+    
+    // Parse JSON fields
+    return exposures.map(exposure => ({
+      ...exposure,
+      countermeasures_active: JSON.parse(exposure.countermeasures_active || '[]')
+    }));
+  }
+
+  /**
+   * Create dynamic hazard event
+   */
+  async createDynamicHazardEvent(eventData) {
+    await this.run(
+      `INSERT INTO dynamic_hazard_events 
+       (id, event_type, event_name, center_sector_x, center_sector_y, 
+        affected_radius, intensity, created_at, expires_at, event_data, affected_sectors) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        eventData.id,
+        eventData.event_type,
+        eventData.event_name,
+        eventData.center_sector_x,
+        eventData.center_sector_y,
+        eventData.affected_radius,
+        eventData.intensity,
+        eventData.created_at,
+        eventData.expires_at,
+        JSON.stringify(eventData.event_data || {}),
+        JSON.stringify(eventData.affected_sectors || [])
+      ]
+    );
+  }
+
+  /**
+   * Get active dynamic hazard events
+   */
+  async getActiveDynamicEvents() {
+    const events = await this.all(
+      'SELECT * FROM dynamic_hazard_events WHERE is_active = 1 AND expires_at > ?',
+      [Date.now()]
+    );
+
+    // Parse JSON fields
+    return events.map(event => ({
+      ...event,
+      event_data: JSON.parse(event.event_data || '{}'),
+      affected_sectors: JSON.parse(event.affected_sectors || '[]')
+    }));
+  }
+
+  /**
+   * Expire dynamic hazard event
+   */
+  async expireDynamicEvent(eventId) {
+    await this.run(
+      'UPDATE dynamic_hazard_events SET is_active = 0 WHERE id = ?',
+      [eventId]
+    );
+  }
+
+  /**
+   * Record player warning
+   */
+  async recordPlayerWarning(warningData) {
+    await this.run(
+      `INSERT INTO player_warning_history 
+       (player_id, warning_type, hazard_id, sector_x, sector_y, warning_level, created_at) 
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [
+        warningData.player_id,
+        warningData.warning_type,
+        warningData.hazard_id || null,
+        warningData.sector_x || null,
+        warningData.sector_y || null,
+        warningData.warning_level,
+        warningData.created_at || Date.now()
+      ]
+    );
+  }
+
+  /**
+   * Acknowledge player warning
+   */
+  async acknowledgePlayerWarning(playerId, warningId) {
+    await this.run(
+      'UPDATE player_warning_history SET acknowledged = 1, acknowledged_at = ? WHERE id = ? AND player_id = ?',
+      [Date.now(), warningId, playerId]
+    );
+  }
+
+  /**
+   * Get player warning history
+   */
+  async getPlayerWarningHistory(playerId, limit = 100) {
+    return await this.all(
+      'SELECT * FROM player_warning_history WHERE player_id = ? ORDER BY created_at DESC LIMIT ?',
+      [playerId, limit]
+    );
+  }
+
+  /**
+   * Update countermeasure research
+   */
+  async updateCountermeasureResearch(playerId, countermeasureId, progress, pointsInvested) {
+    const existing = await this.get(
+      'SELECT * FROM countermeasure_research WHERE player_id = ? AND countermeasure_id = ?',
+      [playerId, countermeasureId]
+    );
+
+    if (existing) {
+      await this.run(
+        `UPDATE countermeasure_research 
+         SET research_progress = ?, research_points_invested = ?, 
+             is_unlocked = CASE WHEN research_progress >= 1.0 THEN 1 ELSE is_unlocked END,
+             unlocked_at = CASE WHEN research_progress >= 1.0 AND unlocked_at IS NULL THEN ? ELSE unlocked_at END
+         WHERE player_id = ? AND countermeasure_id = ?`,
+        [progress, pointsInvested, Date.now(), playerId, countermeasureId]
+      );
+    } else {
+      await this.run(
+        `INSERT INTO countermeasure_research 
+         (player_id, countermeasure_id, research_progress, research_points_invested, is_unlocked, unlocked_at) 
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [
+          playerId, 
+          countermeasureId, 
+          progress, 
+          pointsInvested,
+          progress >= 1.0 ? 1 : 0,
+          progress >= 1.0 ? Date.now() : null
+        ]
+      );
+    }
+  }
+
+  /**
+   * Get player countermeasure research
+   */
+  async getPlayerCountermeasureResearch(playerId) {
+    return await this.all(
+      'SELECT * FROM countermeasure_research WHERE player_id = ?',
+      [playerId]
+    );
+  }
+
+  /**
+   * Save sector hazard generation pattern
+   */
+  async saveSectorHazardPattern(patternData) {
+    await this.run(
+      `INSERT OR REPLACE INTO sector_hazard_patterns 
+       (sector_x, sector_y, biome_type, generation_seed, last_generated, 
+        hazard_count, generation_method, pattern_data, special_rules) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        patternData.sector_x,
+        patternData.sector_y,
+        patternData.biome_type,
+        patternData.generation_seed,
+        patternData.last_generated,
+        patternData.hazard_count,
+        patternData.generation_method || 'procedural',
+        JSON.stringify(patternData.pattern_data || {}),
+        JSON.stringify(patternData.special_rules || [])
+      ]
+    );
+  }
+
+  /**
+   * Get sector hazard pattern
+   */
+  async getSectorHazardPattern(sectorX, sectorY) {
+    const pattern = await this.get(
+      'SELECT * FROM sector_hazard_patterns WHERE sector_x = ? AND sector_y = ?',
+      [sectorX, sectorY]
+    );
+
+    if (pattern) {
+      return {
+        ...pattern,
+        pattern_data: JSON.parse(pattern.pattern_data || '{}'),
+        special_rules: JSON.parse(pattern.special_rules || '[]')
+      };
+    }
+
+    return null;
+  }
+
+  /**
+   * Update player hazard statistics
+   */
+  async updatePlayerHazardStats(playerId, statsUpdate) {
+    const existing = await this.get(
+      'SELECT * FROM player_hazard_stats WHERE player_id = ?',
+      [playerId]
+    );
+
+    const stats = existing || {};
+
+    // Merge in updates
+    Object.entries(statsUpdate).forEach(([key, value]) => {
+      if (typeof value === 'number') {
+        stats[key] = (stats[key] || 0) + value;
+      } else {
+        stats[key] = value;
+      }
+    });
+
+    if (existing) {
+      const updates = [];
+      const values = [];
+
+      Object.entries(statsUpdate).forEach(([key, value]) => {
+        updates.push(`${key} = ?`);
+        values.push(stats[key]);
+      });
+
+      values.push(playerId);
+      await this.run(
+        `UPDATE player_hazard_stats SET ${updates.join(', ')} WHERE player_id = ?`,
+        values
+      );
+    } else {
+      await this.run(
+        `INSERT INTO player_hazard_stats 
+         (player_id, total_hazards_encountered, total_exposure_time, total_damage_from_hazards,
+          hazards_survived, countermeasures_deployed, systems_repaired, critical_warnings_received,
+          temporal_displacements, wormhole_transits, asteroid_collisions_avoided, 
+          radiation_exposure_total, most_dangerous_hazard, longest_exposure_time) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          playerId,
+          stats.total_hazards_encountered || 0,
+          stats.total_exposure_time || 0,
+          stats.total_damage_from_hazards || 0,
+          stats.hazards_survived || 0,
+          stats.countermeasures_deployed || 0,
+          stats.systems_repaired || 0,
+          stats.critical_warnings_received || 0,
+          stats.temporal_displacements || 0,
+          stats.wormhole_transits || 0,
+          stats.asteroid_collisions_avoided || 0,
+          stats.radiation_exposure_total || 0,
+          stats.most_dangerous_hazard || null,
+          stats.longest_exposure_time || 0
+        ]
+      );
+    }
+  }
+
+  /**
+   * Get player hazard statistics
+   */
+  async getPlayerHazardStats(playerId) {
+    return await this.get(
+      'SELECT * FROM player_hazard_stats WHERE player_id = ?',
+      [playerId]
+    );
+  }
+
+  /**
+   * Get hazard system statistics
+   */
+  async getHazardSystemStats() {
+    const totalHazards = await this.get('SELECT COUNT(*) as count FROM sector_hazards');
+    const activeHazards = await this.get('SELECT COUNT(*) as count FROM sector_hazards WHERE expires_at IS NULL OR expires_at > ?', [Date.now()]);
+    const totalExposures = await this.get('SELECT COUNT(*) as count FROM hazard_exposure_history');
+    const activeEvents = await this.get('SELECT COUNT(*) as count FROM dynamic_hazard_events WHERE is_active = 1');
+    const totalWarnings = await this.get('SELECT COUNT(*) as count FROM player_warning_history');
+
+    const hazardTypes = await this.all(
+      'SELECT hazard_type, COUNT(*) as count FROM sector_hazards GROUP BY hazard_type ORDER BY count DESC'
+    );
+
+    const recentExposures = await this.all(
+      `SELECT hazard_type, COUNT(*) as count 
+       FROM hazard_exposure_history 
+       WHERE exposure_start > ? 
+       GROUP BY hazard_type`,
+      [Date.now() - 86400000] // Last 24 hours
+    );
+
+    return {
+      totalHazards: totalHazards.count,
+      activeHazards: activeHazards.count,
+      totalExposures: totalExposures.count,
+      activeEvents: activeEvents.count,
+      totalWarnings: totalWarnings.count,
+      hazardTypes,
+      recentExposures
     };
   }
 

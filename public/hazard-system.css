@@ -1,0 +1,611 @@
+/**
+ * Hazard System CSS - Styling for environmental hazard UI components
+ * Provides consistent theming for warnings, effects, and hazard information
+ */
+
+/* Hazard Warning System */
+.hazard-warning-container {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 1000;
+  pointer-events: none;
+  max-width: 400px;
+}
+
+.hazard-warning {
+  background: rgba(0, 0, 0, 0.85);
+  border: 2px solid;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 10px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(10px);
+  animation: warningSlideIn 0.5s ease-out;
+  pointer-events: auto;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.hazard-warning:hover {
+  transform: translateX(-5px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.7);
+}
+
+.hazard-warning.critical {
+  border-color: #ff0000;
+  background: linear-gradient(135deg, rgba(255, 0, 0, 0.2), rgba(0, 0, 0, 0.85));
+  animation: criticalPulse 1s infinite, warningSlideIn 0.5s ease-out;
+}
+
+.hazard-warning.high {
+  border-color: #ff4500;
+  background: linear-gradient(135deg, rgba(255, 69, 0, 0.15), rgba(0, 0, 0, 0.85));
+}
+
+.hazard-warning.medium {
+  border-color: #ffa500;
+  background: linear-gradient(135deg, rgba(255, 165, 0, 0.15), rgba(0, 0, 0, 0.85));
+}
+
+.hazard-warning.low {
+  border-color: #ffff00;
+  background: linear-gradient(135deg, rgba(255, 255, 0, 0.15), rgba(0, 0, 0, 0.85));
+}
+
+.hazard-warning.info {
+  border-color: #00ff00;
+  background: linear-gradient(135deg, rgba(0, 255, 0, 0.15), rgba(0, 0, 0, 0.85));
+}
+
+.hazard-warning-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.hazard-warning-icon {
+  width: 24px;
+  height: 24px;
+  margin-right: 10px;
+  background-size: contain;
+  background-repeat: no-repeat;
+  filter: drop-shadow(0 0 4px currentColor);
+}
+
+.hazard-warning-title {
+  font-weight: bold;
+  font-size: 14px;
+  color: white;
+  text-shadow: 0 0 4px rgba(0, 0, 0, 0.8);
+}
+
+.hazard-warning-message {
+  color: #e0e0e0;
+  font-size: 12px;
+  line-height: 1.4;
+  margin-bottom: 8px;
+}
+
+.hazard-warning-countdown {
+  color: #ffaa00;
+  font-weight: bold;
+  font-size: 11px;
+  text-align: right;
+}
+
+.hazard-warning-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: all 0.2s ease;
+}
+
+.hazard-warning-close:hover {
+  color: white;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* Ship System Health Display */
+.ship-systems-panel {
+  position: fixed;
+  left: 20px;
+  bottom: 20px;
+  width: 300px;
+  background: rgba(0, 0, 0, 0.85);
+  border: 1px solid rgba(0, 200, 255, 0.3);
+  border-radius: 12px;
+  padding: 16px;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+}
+
+.ship-systems-title {
+  color: #00d4ff;
+  font-weight: bold;
+  font-size: 14px;
+  margin-bottom: 12px;
+  text-align: center;
+  text-shadow: 0 0 8px rgba(0, 212, 255, 0.5);
+}
+
+.system-status {
+  display: flex;
+  align-items: center;
+  margin-bottom: 8px;
+  padding: 4px;
+  border-radius: 4px;
+  transition: background 0.2s ease;
+}
+
+.system-status:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.system-name {
+  flex: 1;
+  color: #e0e0e0;
+  font-size: 12px;
+}
+
+.system-health-bar {
+  width: 100px;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  margin: 0 8px;
+  overflow: hidden;
+}
+
+.system-health-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.5s ease, background-color 0.3s ease;
+}
+
+.system-health-fill.optimal {
+  background: linear-gradient(90deg, #2ed573, #4ecdc4);
+}
+
+.system-health-fill.functional {
+  background: linear-gradient(90deg, #4ecdc4, #feca57);
+}
+
+.system-health-fill.degraded {
+  background: linear-gradient(90deg, #feca57, #ff9ff3);
+}
+
+.system-health-fill.damaged {
+  background: linear-gradient(90deg, #ff9ff3, #ff4757);
+}
+
+.system-health-fill.critical {
+  background: linear-gradient(90deg, #ff4757, #c44569);
+  animation: criticalSystemPulse 1s infinite;
+}
+
+.system-status-text {
+  font-size: 11px;
+  font-weight: bold;
+  text-transform: uppercase;
+  width: 60px;
+  text-align: right;
+}
+
+.system-status-text.optimal { color: #2ed573; }
+.system-status-text.functional { color: #4ecdc4; }
+.system-status-text.degraded { color: #feca57; }
+.system-status-text.damaged { color: #ff9ff3; }
+.system-status-text.critical { 
+  color: #ff4757; 
+  animation: textFlicker 0.5s infinite;
+}
+
+/* Countermeasure Panel */
+.countermeasures-panel {
+  position: fixed;
+  top: 50%;
+  right: 20px;
+  transform: translateY(-50%);
+  width: 280px;
+  max-height: 60vh;
+  overflow-y: auto;
+  background: rgba(0, 0, 0, 0.9);
+  border: 1px solid rgba(100, 200, 255, 0.3);
+  border-radius: 10px;
+  padding: 16px;
+  backdrop-filter: blur(15px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+}
+
+.countermeasures-title {
+  color: #00d4ff;
+  font-weight: bold;
+  font-size: 14px;
+  margin-bottom: 12px;
+  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.countermeasure-item {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 8px;
+  transition: all 0.3s ease;
+  cursor: pointer;
+}
+
+.countermeasure-item:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(0, 212, 255, 0.5);
+  transform: translateX(-3px);
+}
+
+.countermeasure-item.active {
+  border-color: #2ed573;
+  background: linear-gradient(135deg, rgba(46, 213, 115, 0.2), rgba(0, 0, 0, 0.9));
+}
+
+.countermeasure-item.recommended {
+  border-color: #feca57;
+  background: linear-gradient(135deg, rgba(254, 202, 87, 0.2), rgba(0, 0, 0, 0.9));
+}
+
+.countermeasure-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.countermeasure-name {
+  font-weight: bold;
+  font-size: 12px;
+  color: white;
+}
+
+.countermeasure-cost {
+  font-size: 11px;
+  color: #00d4ff;
+  font-weight: bold;
+}
+
+.countermeasure-description {
+  font-size: 11px;
+  color: #b0b0b0;
+  line-height: 1.3;
+  margin-bottom: 6px;
+}
+
+.countermeasure-effectiveness {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.effectiveness-label {
+  font-size: 10px;
+  color: #888;
+  text-transform: uppercase;
+}
+
+.effectiveness-bar {
+  flex: 1;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.effectiveness-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #2ed573, #00d4ff);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+/* Hazard Detection Scanner */
+.hazard-scanner {
+  position: fixed;
+  top: 20px;
+  left: 20px;
+  width: 200px;
+  height: 200px;
+  background: radial-gradient(circle, rgba(0, 212, 255, 0.1), rgba(0, 0, 0, 0.9));
+  border: 2px solid rgba(0, 212, 255, 0.3);
+  border-radius: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(10px);
+}
+
+.scanner-sweep {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  overflow: hidden;
+}
+
+.scanner-sweep::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 2px;
+  height: 50%;
+  background: linear-gradient(to bottom, #00d4ff, transparent);
+  transform-origin: bottom center;
+  animation: scannerSweep 3s linear infinite;
+}
+
+.scanner-blip {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  background: #ff4757;
+  border-radius: 50%;
+  box-shadow: 0 0 8px #ff4757;
+  animation: blipPulse 2s infinite;
+}
+
+.scanner-text {
+  color: #00d4ff;
+  font-size: 11px;
+  font-weight: bold;
+  text-align: center;
+  z-index: 1;
+}
+
+/* Screen Effects for Immersive Hazards */
+.screen-effects-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  z-index: 500;
+}
+
+.fog-effect {
+  background: radial-gradient(circle at center, transparent 20%, rgba(255, 107, 157, 0.1) 80%);
+  opacity: 0.6;
+}
+
+.radiation-effect {
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 255, 0, 0.02) 4px
+  );
+  animation: radiationFlicker 0.1s infinite;
+}
+
+.electromagnetic-static {
+  background: 
+    repeating-linear-gradient(0deg, transparent, rgba(255, 255, 255, 0.03) 1px),
+    repeating-linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.03) 1px);
+  animation: staticNoise 0.05s infinite;
+}
+
+.temporal-distortion {
+  background: radial-gradient(ellipse at center, rgba(0, 255, 255, 0.05), transparent);
+  animation: temporalWave 2s ease-in-out infinite;
+}
+
+/* Animations */
+@keyframes warningSlideIn {
+  from {
+    opacity: 0;
+    transform: translateX(400px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes criticalPulse {
+  0%, 100% { 
+    border-color: #ff0000; 
+    box-shadow: 0 0 0 0 rgba(255, 0, 0, 0.7);
+  }
+  50% { 
+    border-color: #ff6666; 
+    box-shadow: 0 0 0 10px rgba(255, 0, 0, 0);
+  }
+}
+
+@keyframes criticalSystemPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+@keyframes textFlicker {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+@keyframes scannerSweep {
+  0% { transform: translate(-50%, -50%) rotate(0deg); }
+  100% { transform: translate(-50%, -50%) rotate(360deg); }
+}
+
+@keyframes blipPulse {
+  0%, 100% { 
+    opacity: 1; 
+    transform: scale(1);
+  }
+  50% { 
+    opacity: 0.3; 
+    transform: scale(1.5);
+  }
+}
+
+@keyframes radiationFlicker {
+  0%, 100% { opacity: 0.1; }
+  10% { opacity: 0.2; }
+  20% { opacity: 0.05; }
+  30% { opacity: 0.15; }
+  40% { opacity: 0.1; }
+  50% { opacity: 0.25; }
+  60% { opacity: 0.05; }
+  70% { opacity: 0.2; }
+  80% { opacity: 0.1; }
+  90% { opacity: 0.15; }
+}
+
+@keyframes staticNoise {
+  0% { opacity: 0.05; }
+  10% { opacity: 0.1; }
+  20% { opacity: 0.03; }
+  30% { opacity: 0.08; }
+  40% { opacity: 0.05; }
+  50% { opacity: 0.12; }
+  60% { opacity: 0.04; }
+  70% { opacity: 0.09; }
+  80% { opacity: 0.06; }
+  90% { opacity: 0.11; }
+  100% { opacity: 0.05; }
+}
+
+@keyframes temporalWave {
+  0%, 100% { 
+    transform: scale(1) rotate(0deg);
+    opacity: 0.3;
+  }
+  50% { 
+    transform: scale(1.1) rotate(180deg);
+    opacity: 0.1;
+  }
+}
+
+/* Responsive Design */
+@media (max-width: 1024px) {
+  .hazard-warning-container {
+    max-width: 300px;
+    right: 10px;
+  }
+  
+  .ship-systems-panel {
+    width: 250px;
+    left: 10px;
+  }
+  
+  .countermeasures-panel {
+    width: 240px;
+    right: 10px;
+  }
+  
+  .hazard-scanner {
+    width: 150px;
+    height: 150px;
+  }
+}
+
+@media (max-width: 768px) {
+  .hazard-warning-container {
+    max-width: 280px;
+    right: 5px;
+    top: 10px;
+  }
+  
+  .ship-systems-panel {
+    width: 220px;
+    left: 5px;
+    bottom: 10px;
+  }
+  
+  .countermeasures-panel {
+    position: fixed;
+    top: auto;
+    bottom: 200px;
+    right: 5px;
+    transform: none;
+    width: 200px;
+    max-height: 40vh;
+  }
+  
+  .hazard-scanner {
+    width: 120px;
+    height: 120px;
+    top: 10px;
+    left: 10px;
+  }
+  
+  .scanner-text {
+    font-size: 9px;
+  }
+}
+
+/* Accessibility */
+@media (prefers-reduced-motion: reduce) {
+  .hazard-warning.critical,
+  .system-health-fill.critical,
+  .system-status-text.critical {
+    animation: none;
+  }
+  
+  .scanner-sweep::before,
+  .screen-effects-overlay * {
+    animation: none;
+  }
+}
+
+/* High contrast mode */
+@media (prefers-contrast: high) {
+  .hazard-warning {
+    background: rgba(0, 0, 0, 0.95);
+    border-width: 3px;
+  }
+  
+  .ship-systems-panel,
+  .countermeasures-panel {
+    background: rgba(0, 0, 0, 0.95);
+    border-width: 2px;
+  }
+}
+
+/* Custom scrollbar for panels */
+.countermeasures-panel::-webkit-scrollbar,
+.ship-systems-panel::-webkit-scrollbar {
+  width: 6px;
+}
+
+.countermeasures-panel::-webkit-scrollbar-track,
+.ship-systems-panel::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+.countermeasures-panel::-webkit-scrollbar-thumb,
+.ship-systems-panel::-webkit-scrollbar-thumb {
+  background: rgba(0, 212, 255, 0.5);
+  border-radius: 3px;
+}
+
+.countermeasures-panel::-webkit-scrollbar-thumb:hover,
+.ship-systems-panel::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 212, 255, 0.8);
+}

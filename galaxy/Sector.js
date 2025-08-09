@@ -267,49 +267,90 @@ class Sector {
 
   /**
    * Generate environmental hazards specific to the biome
+   * Now uses the comprehensive HazardGenerator system
    */
   generateEnvironmentalHazards() {
+    // Initialize with empty array for backwards compatibility
     this.environmentalHazards = [];
     
+    // The comprehensive hazard generation is now handled by HazardGenerator
+    // This method is kept for backwards compatibility but will be replaced
+    // by the new system in the enhanced sector loading process
+    
+    // Legacy hazard generation for compatibility
     switch (this.biome.name) {
       case 'Black Hole Region':
-        // Gravitational anomalies
+        // Gravitational anomalies (now compatible with new system)
         for (let i = 0; i < 2 + Math.floor(this.rng.next() * 3); i++) {
           this.environmentalHazards.push({
             id: uuidv4(),
-            type: 'gravitational_anomaly',
+            type: 'GRAVITATIONAL_ANOMALY', // Updated to match new system
             x: (this.rng.next() - 0.5) * 1800,
             y: (this.rng.next() - 0.5) * 1800,
-            strength: 0.3 + this.rng.next() * 0.7,
-            radius: 100 + this.rng.next() * 100
+            properties: {
+              pullStrength: 0.3 + this.rng.next() * 0.7,
+              radius: 100 + this.rng.next() * 100
+            },
+            magnitude: 0.5 + this.rng.next() * 0.5,
+            createdAt: Date.now(),
+            isActive: true
           });
         }
         break;
         
       case 'Stellar Nursery':
-        // Radiation zones
+        // Cosmic radiation zones (updated)
         for (let i = 0; i < 1 + Math.floor(this.rng.next() * 2); i++) {
           this.environmentalHazards.push({
             id: uuidv4(),
-            type: 'radiation_zone',
+            type: 'COSMIC_RADIATION', // Updated to match new system
             x: (this.rng.next() - 0.5) * 1600,
             y: (this.rng.next() - 0.5) * 1600,
-            intensity: 1 + this.rng.next() * 4,
-            radius: 150 + this.rng.next() * 150
+            properties: {
+              intensity: 1 + this.rng.next() * 4,
+              radius: 150 + this.rng.next() * 150,
+              radiationType: 'stellar'
+            },
+            magnitude: 0.6 + this.rng.next() * 0.4,
+            createdAt: Date.now(),
+            isActive: true
           });
         }
         break;
         
       case 'Nebula':
-        // Ion storms
+        // Nebula interference (updated)
+        this.environmentalHazards.push({
+          id: uuidv4(),
+          type: 'NEBULA_INTERFERENCE', // Updated to match new system
+          x: 0, // Sector-wide effect
+          y: 0,
+          properties: {
+            gasType: 'ionized',
+            density: 0.4 + this.rng.next() * 0.4,
+            electricalActivity: this.rng.next() > 0.4
+          },
+          magnitude: 0.5 + this.rng.next() * 0.3,
+          createdAt: Date.now(),
+          isActive: true
+        });
+        
+        // Magnetic storms in nebulae
         if (this.rng.next() < 0.3) {
           this.environmentalHazards.push({
             id: uuidv4(),
-            type: 'ion_storm',
+            type: 'MAGNETIC_STORM',
             x: (this.rng.next() - 0.5) * 2000,
             y: (this.rng.next() - 0.5) * 2000,
-            duration: 30000 + this.rng.next() * 60000, // 30-90 seconds
-            startTime: Date.now() + this.rng.next() * 300000 // Start within 5 minutes
+            properties: {
+              fieldStrength: 0.5 + this.rng.next() * 0.5,
+              duration: 30000 + this.rng.next() * 60000,
+              startTime: Date.now() + this.rng.next() * 300000
+            },
+            magnitude: 0.4 + this.rng.next() * 0.4,
+            createdAt: Date.now(),
+            isActive: true,
+            expiresAt: Date.now() + 30000 + this.rng.next() * 60000
           });
         }
         break;

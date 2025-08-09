@@ -36,6 +36,7 @@
   let myId = null;
   let players = {};
   let ores = [];
+  let hazards = []; // Environmental hazards
   let myResources = 0;
   let myLevel = 1;
   let shopItems = {};
@@ -59,6 +60,9 @@
   
   // Trading system
   let tradingUI = null;
+  
+  // Hazard system
+  let hazardSystemUI = null;
   
   // Combat state
   let selectedTarget = null;
@@ -286,6 +290,7 @@
       players = {};
       msg.players.forEach(p => { players[p.id] = p; });
       ores = msg.ores;
+      hazards = msg.hazards || [];
       if (msg.items) {
         shopItems = msg.items;
       }
@@ -333,6 +338,17 @@
           window.skillSystem = new SkillSystemUI(window.gameClient);
         }
         
+        // Initialize hazard system UI
+        if (typeof HazardSystemUI !== 'undefined') {
+          hazardSystemUI = new HazardSystemUI(gameClientInterface);
+          window.hazardSystem = hazardSystemUI;
+          
+          // Initialize with current hazards
+          if (hazards.length > 0) {
+            hazardSystemUI.updateHazards(hazards);
+          }
+        }
+        
         // Make galaxy UI, ship editor, trading UI and game functions globally accessible
         window.galaxyUI = galaxyUI;
         window.shipEditor = shipEditor;
@@ -353,6 +369,13 @@
         }
       });
       ores = msg.ores;
+      hazards = msg.hazards || [];
+      
+      // Update hazard system if available
+      if (hazardSystemUI) {
+        hazardSystemUI.updateHazards(hazards);
+      }
+      
       updatePlayerCount();
     } else if (msg.type === 'resources') {
       const oldResources = myResources;
@@ -1634,6 +1657,11 @@
       ctx.stroke();
       ctx.restore();
     });
+    
+    // Draw environmental hazards
+    if (hazardSystemUI) {
+      hazardSystemUI.renderHazards(ctx);
+    }
     
     // Draw players with enhanced visuals
     Object.values(players).forEach(p => {
