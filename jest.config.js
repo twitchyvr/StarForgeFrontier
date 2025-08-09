@@ -15,16 +15,20 @@ module.exports = {
     {
       displayName: 'server',
       testEnvironment: 'node',
-      testMatch: ['**/tests/server/**/*.test.js']
+      testMatch: ['**/tests/server/**/*.test.js'],
+      // Force single worker for Node.js 16 compatibility
+      maxWorkers: 1
     },
     {
       displayName: 'client',
       testEnvironment: 'jsdom',
-      testMatch: ['**/tests/client/**/*.test.js']
+      testMatch: ['**/tests/client/**/*.test.js'],
+      // Force single worker for Node.js 16 compatibility
+      maxWorkers: 1
     }
   ],
   verbose: true,
   testTimeout: 10000,
-  // Fix for Node.js 16 compatibility with Jest
-  maxWorkers: process.env.NODE_ENV === 'ci' || process.versions.node.startsWith('16') ? 1 : '50%'
+  // Global maxWorkers for Node.js 16 compatibility
+  maxWorkers: 1
 };
