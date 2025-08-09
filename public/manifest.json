@@ -1,0 +1,123 @@
+{
+  "name": "StarForge Frontier",
+  "short_name": "StarForge",
+  "description": "A multiplayer spaceship building and space exploration game with full physics, upgrades and an engaging in‑game economy.",
+  "start_url": "/",
+  "display": "fullscreen",
+  "orientation": "landscape-primary",
+  "theme_color": "#0d1421",
+  "background_color": "#0d1421",
+  "categories": ["games", "entertainment"],
+  "lang": "en",
+  "scope": "/",
+  "icons": [
+    {
+      "src": "/icons/icon-72x72.png",
+      "sizes": "72x72",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-96x96.png",
+      "sizes": "96x96",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-128x128.png",
+      "sizes": "128x128",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-144x144.png",
+      "sizes": "144x144",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-152x152.png",
+      "sizes": "152x152",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-384x384.png",
+      "sizes": "384x384",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/screenshots/desktop.png",
+      "sizes": "1280x720",
+      "type": "image/png",
+      "form_factor": "wide"
+    },
+    {
+      "src": "/screenshots/mobile.png",
+      "sizes": "360x640",
+      "type": "image/png",
+      "form_factor": "narrow"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Ship Designer",
+      "short_name": "Designer",
+      "description": "Open the ship designer interface",
+      "url": "/?shortcut=designer",
+      "icons": [
+        {
+          "src": "/icons/shortcut-designer.png",
+          "sizes": "96x96"
+        }
+      ]
+    },
+    {
+      "name": "Galaxy Map",
+      "short_name": "Galaxy",
+      "description": "Open the galaxy map",
+      "url": "/?shortcut=galaxy",
+      "icons": [
+        {
+          "src": "/icons/shortcut-galaxy.png",
+          "sizes": "96x96"
+        }
+      ]
+    },
+    {
+      "name": "Trading",
+      "short_name": "Trading",
+      "description": "Open trading interface",
+      "url": "/?shortcut=trading",
+      "icons": [
+        {
+          "src": "/icons/shortcut-trading.png",
+          "sizes": "96x96"
+        }
+      ]
+    }
+  ],
+  "related_applications": [],
+  "prefer_related_applications": false,
+  "protocol_handlers": [
+    {
+      "protocol": "web+starforge",
+      "url": "/?invite=%s"
+    }
+  ]
+}

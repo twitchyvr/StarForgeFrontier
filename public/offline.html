@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>StarForge Frontier - Offline</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #0d1421 0%, #1a2332 100%);
+      color: #ffffff;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 20px;
+    }
+    
+    .offline-container {
+      max-width: 500px;
+      width: 100%;
+      background: rgba(255, 255, 255, 0.1);
+      padding: 40px;
+      border-radius: 20px;
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+    
+    .offline-icon {
+      font-size: 64px;
+      margin-bottom: 20px;
+      animation: pulse 2s infinite;
+    }
+    
+    @keyframes pulse {
+      0% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.7; transform: scale(1.05); }
+      100% { opacity: 1; transform: scale(1); }
+    }
+    
+    h1 {
+      font-size: 28px;
+      margin-bottom: 10px;
+      color: #64b5f6;
+    }
+    
+    .subtitle {
+      font-size: 16px;
+      color: #b0b0b0;
+      margin-bottom: 30px;
+    }
+    
+    .message {
+      font-size: 14px;
+      line-height: 1.6;
+      margin-bottom: 30px;
+      color: #e0e0e0;
+    }
+    
+    .retry-btn {
+      background: linear-gradient(45deg, #64b5f6, #42a5f5);
+      border: none;
+      padding: 12px 24px;
+      border-radius: 25px;
+      color: white;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      margin: 10px;
+    }
+    
+    .retry-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 5px 15px rgba(100, 181, 246, 0.4);
+    }
+    
+    .offline-features {
+      margin-top: 30px;
+      text-align: left;
+    }
+    
+    .feature-list {
+      list-style: none;
+      padding: 0;
+    }
+    
+    .feature-list li {
+      padding: 8px 0;
+      font-size: 14px;
+      color: #c0c0c0;
+    }
+    
+    .feature-list li::before {
+      content: "🚀";
+      margin-right: 10px;
+    }
+    
+    .status-indicator {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      margin-left: 10px;
+      animation: blink 1s infinite;
+    }
+    
+    .offline {
+      background-color: #f44336;
+    }
+    
+    .online {
+      background-color: #4caf50;
+    }
+    
+    @keyframes blink {
+      0%, 50% { opacity: 1; }
+      51%, 100% { opacity: 0.3; }
+    }
+    
+    @media (max-width: 480px) {
+      .offline-container {
+        padding: 30px 20px;
+        margin: 20px;
+      }
+      
+      .offline-icon {
+        font-size: 48px;
+      }
+      
+      h1 {
+        font-size: 24px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="offline-container">
+    <div class="offline-icon">🛸</div>
+    <h1>StarForge Frontier</h1>
+    <div class="subtitle">Currently Offline</div>
+    
+    <div class="message">
+      Your ship's communication systems are temporarily offline. 
+      Don't worry, pilot - we're working to restore connection to the galaxy network.
+    </div>
+    
+    <button class="retry-btn" onclick="location.reload()">
+      Reconnect to Galaxy
+    </button>
+    
+    <div class="offline-features">
+      <h3 style="color: #64b5f6; margin-bottom: 15px;">Offline Capabilities:</h3>
+      <ul class="feature-list">
+        <li>Ship design and customization</li>
+        <li>Skill tree planning</li>
+        <li>Local game data caching</li>
+        <li>Offline progress sync when reconnected</li>
+      </ul>
+    </div>
+    
+    <div style="margin-top: 30px; font-size: 12px; color: #888;">
+      Connection Status: <span id="connectionStatus">Offline</span>
+      <span id="statusIndicator" class="status-indicator offline"></span>
+    </div>
+  </div>
+
+  <script>
+    // Check connection status
+    function updateConnectionStatus() {
+      const online = navigator.onLine;
+      const statusText = document.getElementById('connectionStatus');
+      const statusIndicator = document.getElementById('statusIndicator');
+      
+      if (online) {
+        statusText.textContent = 'Online';
+        statusIndicator.className = 'status-indicator online';
+        // Auto-redirect when online
+        setTimeout(() => {
+          window.location.href = '/';
+        }, 1000);
+      } else {
+        statusText.textContent = 'Offline';
+        statusIndicator.className = 'status-indicator offline';
+      }
+    }
+    
+    // Listen for online/offline events
+    window.addEventListener('online', updateConnectionStatus);
+    window.addEventListener('offline', updateConnectionStatus);
+    
+    // Initial check
+    updateConnectionStatus();
+    
+    // Periodic connection check
+    setInterval(() => {
+      if (navigator.onLine) {
+        fetch('/', { method: 'HEAD', cache: 'no-cache' })
+          .then(() => {
+            window.location.href = '/';
+          })
+          .catch(() => {
+            // Still offline
+          });
+      }
+    }, 5000);
+  </script>
+</body>
+</html>

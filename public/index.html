@@ -3,8 +3,52 @@
 <head>
   <meta charset="UTF-8" />
   <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>StarForgeFrontier</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>StarForge Frontier</title>
+  
+  <!-- PWA Meta Tags -->
+  <meta name="description" content="A multiplayer spaceship building and space exploration game with full physics, upgrades and an engaging in‑game economy." />
+  <meta name="theme-color" content="#0d1421" />
+  <meta name="background-color" content="#0d1421" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="StarForge" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="application-name" content="StarForge" />
+  <meta name="msapplication-TileColor" content="#0d1421" />
+  <meta name="msapplication-tap-highlight" content="no" />
+  
+  <!-- PWA Manifest -->
+  <link rel="manifest" href="manifest.json" />
+  
+  <!-- iOS Specific -->
+  <link rel="apple-touch-icon" href="icons/icon-192x192.svg" />
+  <link rel="apple-touch-icon" sizes="72x72" href="icons/icon-72x72.svg" />
+  <link rel="apple-touch-icon" sizes="96x96" href="icons/icon-96x96.svg" />
+  <link rel="apple-touch-icon" sizes="128x128" href="icons/icon-128x128.svg" />
+  <link rel="apple-touch-icon" sizes="144x144" href="icons/icon-144x144.svg" />
+  <link rel="apple-touch-icon" sizes="152x152" href="icons/icon-152x152.svg" />
+  <link rel="apple-touch-icon" sizes="192x192" href="icons/icon-192x192.svg" />
+  <link rel="apple-touch-icon" sizes="384x384" href="icons/icon-384x384.svg" />
+  <link rel="apple-touch-icon" sizes="512x512" href="icons/icon-512x512.svg" />
+  
+  <!-- Splash Screens -->
+  <link rel="apple-touch-startup-image" href="icons/icon-512x512.svg" />
+  
+  <!-- Standard Icons -->
+  <link rel="icon" type="image/svg+xml" href="icons/icon-192x192.svg" />
+  <link rel="icon" type="image/png" sizes="32x32" href="icons/icon-128x128.svg" />
+  <link rel="icon" type="image/png" sizes="16x16" href="icons/icon-72x72.svg" />
+  <link rel="shortcut icon" href="icons/icon-72x72.svg" />
+  
+  <!-- Microsoft -->
+  <meta name="msapplication-TileImage" content="icons/icon-144x144.svg" />
+  <meta name="msapplication-config" content="browserconfig.xml" />
+  
+  <!-- Security -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' ws: wss:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self';" />
+  
+  <!-- Stylesheets -->
   <link rel="stylesheet" href="style.css" />
   <link rel="stylesheet" href="ship-editor.css" />
   <link rel="stylesheet" href="trading-ui.css" />
@@ -13,6 +57,12 @@
   <link rel="stylesheet" href="guild-system.css" />
   <link rel="stylesheet" href="hazard-system.css" />
   <link rel="stylesheet" href="research-system.css" />
+  <link rel="stylesheet" href="mobile.css" />
+  
+  <!-- Preload Critical Resources -->
+  <link rel="preload" href="client-enhanced.js" as="script" />
+  <link rel="preload" href="mobile-controls.js" as="script" />
+  <link rel="dns-prefetch" href="//fonts.googleapis.com" />
 </head>
 <body>
   <canvas id="game"></canvas>
@@ -172,6 +222,128 @@
   <script src="guild-system.js"></script>
   <script src="hazard-system.js"></script>
   <script src="research-system.js"></script>
+  <script src="mobile-controls.js"></script>
+  <script src="push-notifications.js"></script>
+  <script src="mobile-performance.js"></script>
   <script src="client-enhanced.js"></script>
+  
+  <!-- PWA Installation and Setup -->
+  <script>
+    // PWA Installation handling
+    let deferredPrompt;
+    
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+      
+      // Show custom install UI
+      const installButton = document.createElement('div');
+      installButton.className = 'install-prompt';
+      installButton.innerHTML = `
+        <div class="install-content">
+          <h3>Install StarForge Frontier</h3>
+          <p>Install the app for the best gaming experience!</p>
+          <button onclick="installPWA()">Install</button>
+          <button onclick="dismissInstall()">Later</button>
+        </div>
+      `;
+      installButton.style.cssText = `
+        position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+        background: linear-gradient(135deg, #0d1421, #1a2332);
+        color: white; padding: 20px; border-radius: 12px; z-index: 9999;
+        border: 1px solid #64b5f6; box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+        text-align: center; max-width: 300px; font-family: Arial, sans-serif;
+      `;
+      document.body.appendChild(installButton);
+    });
+    
+    function installPWA() {
+      if (deferredPrompt) {
+        deferredPrompt.prompt();
+        deferredPrompt.userChoice.then((choiceResult) => {
+          if (choiceResult.outcome === 'accepted') {
+            console.log('User accepted the install prompt');
+          }
+          deferredPrompt = null;
+          dismissInstall();
+        });
+      }
+    }
+    
+    function dismissInstall() {
+      const prompt = document.querySelector('.install-prompt');
+      if (prompt) prompt.remove();
+    }
+    
+    // Service Worker Registration
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js')
+          .then((registration) => {
+            console.log('SW registered: ', registration);
+            
+            // Handle updates
+            registration.addEventListener('updatefound', () => {
+              const newWorker = registration.installing;
+              newWorker.addEventListener('statechange', () => {
+                if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                  // New content available
+                  if (confirm('New version available! Reload to update?')) {
+                    window.location.reload();
+                  }
+                }
+              });
+            });
+          })
+          .catch((registrationError) => {
+            console.log('SW registration failed: ', registrationError);
+          });
+      });
+    }
+    
+    // Handle app shortcuts
+    const urlParams = new URLSearchParams(window.location.search);
+    const shortcut = urlParams.get('shortcut');
+    
+    if (shortcut) {
+      window.addEventListener('load', () => {
+        setTimeout(() => {
+          const keyMap = {
+            'designer': 'KeyB',
+            'galaxy': 'KeyG',
+            'trading': 'KeyT'
+          };
+          
+          const key = keyMap[shortcut];
+          if (key) {
+            const event = new KeyboardEvent('keydown', { code: key });
+            window.dispatchEvent(event);
+          }
+        }, 1000);
+      });
+    }
+    
+    // Performance monitoring
+    if ('performance' in window) {
+      window.addEventListener('load', () => {
+        setTimeout(() => {
+          const perfData = performance.getEntriesByType('navigation')[0];
+          console.log('App load time:', perfData.loadEventEnd - perfData.fetchStart);
+          
+          // Send performance data to server for optimization
+          fetch('/api/performance', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              loadTime: perfData.loadEventEnd - perfData.fetchStart,
+              domContentLoaded: perfData.domContentLoadedEventEnd - perfData.fetchStart,
+              userAgent: navigator.userAgent,
+              timestamp: new Date().toISOString()
+            })
+          }).catch(() => {}); // Ignore errors
+        }, 0);
+      });
+    }
+  </script>
 </body>
 </html>

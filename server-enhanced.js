@@ -1168,6 +1168,180 @@ app.get('/api/health', (req, res) => {
 });
 
 // Metrics endpoint for monitoring (Prometheus format)
+// PWA and Push Notification Endpoints
+const pushSubscriptions = new Map(); // Store push subscriptions
+
+app.post('/api/push-subscribe', (req, res) => {
+  try {
+    const { subscription, userAgent, timestamp } = req.body;
+    
+    if (!subscription || !subscription.endpoint) {
+      return res.status(400).json({ error: 'Invalid subscription' });
+    }
+    
+    // Store subscription (in production, save to database)
+    const subscriptionId = uuidv4();
+    pushSubscriptions.set(subscription.endpoint, {
+      id: subscriptionId,
+      subscription,
+      userAgent,
+      timestamp,
+      createdAt: new Date()
+    });
+    
+    console.log(`Push subscription registered: ${subscriptionId}`);
+    res.json({ success: true, subscriptionId });
+  } catch (error) {
+    console.error('Push subscribe error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.post('/api/push-unsubscribe', (req, res) => {
+  try {
+    const { endpoint } = req.body;
+    
+    if (pushSubscriptions.has(endpoint)) {
+      pushSubscriptions.delete(endpoint);
+      console.log(`Push subscription removed: ${endpoint}`);
+    }
+    
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Push unsubscribe error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.post('/api/send-push', (req, res) => {
+  try {
+    const { subscription, notification, priority } = req.body;
+    
+    // In production, use a proper push service like web-push
+    // For now, just acknowledge the request
+    console.log('Push notification request:', {
+      endpoint: subscription?.endpoint,
+      title: notification?.title,
+      priority: priority
+    });
+    
+    // TODO: Implement actual push notification sending
+    // This would require web-push library and VAPID keys
+    
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Send push error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.post('/api/notification-preferences', (req, res) => {
+  try {
+    const preferences = req.body;
+    
+    // TODO: Save preferences to database by user ID
+    console.log('Notification preferences updated:', preferences);
+    
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Notification preferences error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.post('/api/performance', (req, res) => {
+  try {
+    const { loadTime, domContentLoaded, userAgent, timestamp } = req.body;
+    
+    // Log performance data for optimization
+    console.log('Performance data:', {
+      loadTime,
+      domContentLoaded,
+      userAgent: userAgent?.substring(0, 100), // Truncate for privacy
+      timestamp
+    });
+    
+    // TODO: Store in database for analysis
+    
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Performance logging error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.post('/api/sync-action', (req, res) => {
+  try {
+    const action = req.body;
+    
+    // Handle offline actions that need to be synced
+    console.log('Syncing offline action:', action);
+    
+    // TODO: Process offline action based on type
+    // e.g., resource collection, ship modifications, etc.
+    
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Sync action error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Function to broadcast push notifications for game events
+function broadcastPushNotification(eventType, data) {
+  const notification = createGameNotification(eventType, data);
+  
+  if (!notification) return;
+  
+  pushSubscriptions.forEach((sub) => {
+    // In production, send actual push notification
+    console.log(`Would send push notification to ${sub.id}:`, notification);
+    
+    // TODO: Implement actual push sending with web-push
+    /*
+    webpush.sendNotification(sub.subscription, JSON.stringify(notification))
+      .catch(error => {
+        console.error('Push notification failed:', error);
+        if (error.statusCode === 410) {
+          // Subscription expired, remove it
+          pushSubscriptions.delete(sub.subscription.endpoint);
+        }
+      });
+    */
+  });
+}
+
+function createGameNotification(eventType, data) {
+  const notifications = {
+    'guild_war': {
+      title: 'Guild War Declared!',
+      body: `War has been declared between ${data.guild1} and ${data.guild2}`,
+      icon: '/icons/icon-192x192.svg',
+      tag: 'guild-war'
+    },
+    'research_complete': {
+      title: 'Research Complete!',
+      body: `${data.techName} research has been completed`,
+      icon: '/icons/icon-192x192.svg',
+      tag: 'research-complete'
+    },
+    'faction_reputation': {
+      title: `Faction Update - ${data.factionName}`,
+      body: `Your reputation has changed to ${data.reputation}`,
+      icon: '/icons/icon-192x192.svg',
+      tag: 'faction-update'
+    },
+    'player_achievement': {
+      title: 'Achievement Unlocked!',
+      body: data.achievementName,
+      icon: '/icons/icon-192x192.svg',
+      tag: 'achievement'
+    }
+  };
+  
+  return notifications[eventType];
+}
+
 app.get('/metrics', (req, res) => {
   const metrics = [
     `# HELP active_players Number of active players`,

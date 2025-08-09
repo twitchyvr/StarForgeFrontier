@@ -867,19 +867,226 @@
     });
   }
 
-  // Input handling
+  // Input handling (including mobile)
   const keys = {};
+  const mobileInputs = {};
+  
   function sendInput() {
     if (ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({
         type: 'input',
-        up: keys['KeyW'] || keys['ArrowUp'],
-        down: keys['KeyS'] || keys['ArrowDown'],
-        left: keys['KeyA'] || keys['ArrowLeft'],
-        right: keys['KeyD'] || keys['ArrowRight']
+        up: keys['KeyW'] || keys['ArrowUp'] || mobileInputs['up'],
+        down: keys['KeyS'] || keys['ArrowDown'] || mobileInputs['down'],
+        left: keys['KeyA'] || keys['ArrowLeft'] || mobileInputs['left'],
+        right: keys['KeyD'] || keys['ArrowRight'] || mobileInputs['right']
       }));
     }
   }
+  
+  // Mobile control integration
+  function setupMobileIntegration() {
+    // Listen for mobile control events
+    window.addEventListener('mobileDirection', (e) => {
+      const { direction, pressed } = e.detail;
+      mobileInputs[direction] = pressed;
+      sendInput();
+    });
+    
+    window.addEventListener('mobileAction', (e) => {
+      const { action } = e.detail;
+      switch (action) {
+        case 'shoot':
+          handleWeaponFire();
+          break;
+        case 'target':
+          cycleTarget();
+          break;
+        case 'boost':
+          // Implement boost functionality if available
+          break;
+      }
+    });
+    
+    window.addEventListener('mobileTap', (e) => {
+      const { x, y } = e.detail;
+      handleCanvasTap(x, y);
+    });
+    
+    window.addEventListener('mobilePan', (e) => {
+      const { deltaX, deltaY } = e.detail;
+      handleCameraPan(deltaX, deltaY);
+    });
+    
+    window.addEventListener('mobileZoom', (e) => {
+      const { scale } = e.detail;
+      targetZoom = Math.max(0.5, Math.min(3.0, zoom * scale));
+    });
+    
+    window.addEventListener('mobileResize', (e) => {
+      const { width, height } = e.detail;
+      canvas.width = width;
+      canvas.height = height;
+    });
+  }
+  
+  function handleCanvasTap(x, y) {
+    // Convert screen coordinates to world coordinates
+    const player = players[myId];
+    if (!player) return;
+    
+    const camX = player.x - canvas.width / 2 / zoom;
+    const camY = player.y - canvas.height / 2 / zoom;
+    
+    const worldX = camX + x / zoom;
+    const worldY = camY + y / zoom;
+    
+    // Check if tapping on an enemy for targeting
+    let nearestEnemy = null;
+    let nearestDistance = Infinity;
+    
+    for (const [playerId, otherPlayer] of Object.entries(players)) {
+      if (playerId === myId || !otherPlayer) continue;
+      
+      const dx = worldX - otherPlayer.x;
+      const dy = worldY - otherPlayer.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      
+      if (distance < 30 && distance < nearestDistance) {
+        nearestEnemy = playerId;
+        nearestDistance = distance;
+      }
+    }
+    
+    if (nearestEnemy) {
+      selectTarget(nearestEnemy);
+    } else {
+      // Check for ore collection
+      for (const ore of ores) {
+        const dx = worldX - ore.x;
+        const dy = worldY - ore.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        
+        if (distance < 20) {
+          // Attempt to collect ore
+          if (distance <= shipProperties.collectionRange) {
+            attemptOreCollection(ore);
+          }
+          break;
+        }
+      }
+    }
+  }
+  
+  function handleCameraPan(deltaX, deltaY) {
+    // Implement camera panning for mobile
+    // This is optional - you might prefer to keep the camera locked to the player
+  }
+  
+  function cycleTarget() {
+    const playerKeys = Object.keys(players).filter(id => id !== myId && players[id]);
+    if (playerKeys.length === 0) {
+      selectedTarget = null;
+      return;
+    }
+    
+    if (!selectedTarget || !players[selectedTarget]) {
+      selectedTarget = playerKeys[0];
+    } else {
+      const currentIndex = playerKeys.indexOf(selectedTarget);
+      const nextIndex = (currentIndex + 1) % playerKeys.length;
+      selectedTarget = playerKeys[nextIndex];
+    }
+    
+    updateTargetDisplay();
+  }
+  
+  function selectTarget(playerId) {
+    selectedTarget = playerId;
+    updateTargetDisplay();
+    
+    // Mobile feedback
+    if (window.mobileControls && window.mobileControls.vibrate) {
+      window.mobileControls.vibrate([20]);
+    }
+  }
+  
+  function handleWeaponFire() {
+    if (weaponCooldown > 0 || !selectedTarget || !players[selectedTarget]) return;
+    
+    const player = players[myId];
+    const target = players[selectedTarget];
+    
+    if (!player || !target) return;
+    
+    const dx = target.x - player.x;
+    const dy = target.y - player.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    
+    if (distance <= shipProperties.weaponRange && shipProperties.damage > 0) {
+      // Fire weapon
+      ws.send(JSON.stringify({
+        type: 'fire_weapon',
+        targetId: selectedTarget
+      }));
+      
+      weaponCooldown = 60; // 1 second at 60 FPS
+      lastFireTime = Date.now();
+      
+      // Visual feedback
+      createMuzzleFlash(player.x, player.y, Math.atan2(dy, dx));
+      
+      // Mobile feedback
+      if (window.mobileControls && window.mobileControls.vibrate) {
+        window.mobileControls.vibrate([50]);
+      }
+    }
+  }
+  
+  function attemptOreCollection(ore) {
+    const player = players[myId];
+    if (!player) return;
+    
+    const dx = ore.x - player.x;
+    const dy = ore.y - player.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    
+    if (distance <= shipProperties.collectionRange) {
+      ws.send(JSON.stringify({
+        type: 'collect_ore',
+        oreId: ore.id
+      }));
+    }
+  }
+  
+  function createMuzzleFlash(x, y, angle) {
+    for (let i = 0; i < 5; i++) {
+      particleEffects.push({
+        x: x + Math.cos(angle) * 20,
+        y: y + Math.sin(angle) * 20,
+        vx: Math.cos(angle + (Math.random() - 0.5) * 0.5) * 8,
+        vy: Math.sin(angle + (Math.random() - 0.5) * 0.5) * 8,
+        life: 0.3,
+        color: `hsl(${Math.random() * 60 + 15}, 100%, 70%)`,
+        type: 'impact'
+      });
+    }
+  }
+  
+  function updateTargetDisplay() {
+    const targetNameEl = document.getElementById('selectedTargetName');
+    if (targetNameEl) {
+      if (selectedTarget && players[selectedTarget]) {
+        targetNameEl.textContent = `Target: Player ${selectedTarget}`;
+        targetNameEl.style.color = '#ff4444';
+      } else {
+        targetNameEl.textContent = 'No Target';
+        targetNameEl.style.color = '#888';
+      }
+    }
+  }
+  
+  // Initialize mobile integration
+  setupMobileIntegration();
 
   window.addEventListener('keydown', (e) => {
     if (['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code)) {
