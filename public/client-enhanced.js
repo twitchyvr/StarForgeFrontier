@@ -22,6 +22,11 @@
   const closeShopBtn = document.getElementById('closeShop');
   const addEngineBtn = document.getElementById('addEngine');
   const addCargoBtn = document.getElementById('addCargo');
+  
+  // Ship stats UI elements
+  const shipSpeedEl = document.getElementById('shipSpeed');
+  const shipCargoEl = document.getElementById('shipCargo');
+  const shipRangeEl = document.getElementById('shipRange');
 
   // Game state
   let myId = null;
@@ -31,6 +36,14 @@
   let myLevel = 1;
   let shopItems = {};
   let activeEvents = [];
+  let shipProperties = {
+    speed: 2,
+    cargoCapacity: 1000,
+    collectionRange: 40,
+    maxHealth: 100,
+    damage: 0,
+    weaponRange: 0
+  };
   
   // Camera and visual effects
   let zoom = 1;
@@ -187,6 +200,9 @@
       if (msg.items) {
         shopItems = msg.items;
       }
+      if (msg.playerData && msg.playerData.shipProperties) {
+        shipProperties = msg.playerData.shipProperties;
+      }
       showNotification('Connected to StarForgeFrontier', 'success');
       updatePlayerCount();
     } else if (msg.type === 'update') {
@@ -205,6 +221,10 @@
       myResources = msg.resources;
       updateHUD();
       renderShop(); // Update shop button states
+    } else if (msg.type === 'shipProperties') {
+      shipProperties = msg.properties;
+      updateShipStats();
+      showNotification('Ship upgraded!', 'info', 2000);
     } else if (msg.type === 'player_disconnect') {
       delete players[msg.id];
       updatePlayerCount();
@@ -242,6 +262,17 @@
     if (player) {
       positionEl.textContent = `${Math.round(player.x)}, ${Math.round(player.y)}`;
     }
+    
+    // Update ship stats display
+    updateShipStats();
+  }
+  
+  // Update ship statistics display
+  function updateShipStats() {
+    if (shipSpeedEl) shipSpeedEl.textContent = shipProperties.speed.toFixed(1);
+    if (shipCargoEl) shipCargoEl.textContent = `${Math.round((myResources / shipProperties.cargoCapacity) * 100)}%`;
+    if (shipRangeEl) shipRangeEl.textContent = shipProperties.collectionRange;
+  }
     
     // Update button states
     addEngineBtn.disabled = myResources < 50;

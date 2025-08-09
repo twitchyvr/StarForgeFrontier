@@ -36,11 +36,35 @@ let events = [];
 // Game constants
 const STARTING_RESOURCES = 100;
 const ORE_VALUE = 25;
+const BASE_SPEED = 2.0;
+const BASE_CARGO_CAPACITY = 1000;
+const BASE_COLLECTION_RANGE = 40;
+
 const ITEMS = {
   engine: { cost: 50, type: 'module', id: 'engine' },
   cargo:  { cost: 30, type: 'module', id: 'cargo' },
   weapon: { cost: 70, type: 'module', id: 'weapon' },
   shield: { cost: 60, type: 'module', id: 'shield' }
+};
+
+// Component effect definitions
+const COMPONENT_EFFECTS = {
+  engine: {
+    speedMultiplier: 0.3,  // +30% speed per engine
+    accelerationBonus: 0.2 // +20% responsiveness
+  },
+  cargo: {
+    capacityBonus: 500,    // +500 capacity per cargo module
+    efficiencyBonus: 0.1   // +10% resource collection per cargo
+  },
+  weapon: {
+    damageBonus: 25,       // +25 damage per weapon
+    rangeBonus: 10         // +10 range per weapon
+  },
+  shield: {
+    healthBonus: 100,      // +100 health per shield
+    regenBonus: 2          // +2 health regen per shield per second
+  }
 };
 
 // Achievement definitions
@@ -52,6 +76,92 @@ const ACHIEVEMENTS = {
   WEALTHY: { type: 'resources', name: 'Wealthy', desc: 'Accumulate 500 resources', threshold: 500 },
   ENGINEER: { type: 'modules', name: 'Engineer', desc: 'Build 5 modules', threshold: 5 }
 };
+
+// Calculate ship properties based on installed components
+function calculateShipProperties(player) {
+  if (!player.modules || player.modules.length === 0) {
+    return {
+      speed: BASE_SPEED,
+      cargoCapacity: BASE_CARGO_CAPACITY,
+      collectionRange: BASE_COLLECTION_RANGE,
+      maxHealth: 100,
+      damage: 0,
+      weaponRange: 0
+    };
+  }
+
+  // Count components
+  const componentCounts = {};
+  player.modules.forEach(module => {
+    if (module.id !== 'hull') {
+      componentCounts[module.id] = (componentCounts[module.id] || 0) + 1;
+    }
+  });
+
+  // Calculate properties
+  let speed = BASE_SPEED;
+  let cargoCapacity = BASE_CARGO_CAPACITY;
+  let collectionRange = BASE_COLLECTION_RANGE;
+  let maxHealth = 100;
+  let damage = 0;
+  let weaponRange = 0;
+
+  // Apply engine effects
+  if (componentCounts.engine) {
+    const engines = componentCounts.engine;
+    speed = BASE_SPEED * (1 + engines * COMPONENT_EFFECTS.engine.speedMultiplier);
+  }
+
+  // Apply cargo effects
+  if (componentCounts.cargo) {
+    const cargoModules = componentCounts.cargo;
+    cargoCapacity = BASE_CARGO_CAPACITY + (cargoModules * COMPONENT_EFFECTS.cargo.capacityBonus);
+    collectionRange = BASE_COLLECTION_RANGE + (cargoModules * 10); // Wider collection range
+  }
+
+  // Apply weapon effects
+  if (componentCounts.weapon) {
+    const weapons = componentCounts.weapon;
+    damage = weapons * COMPONENT_EFFECTS.weapon.damageBonus;
+    weaponRange = weapons * COMPONENT_EFFECTS.weapon.rangeBonus;
+  }
+
+  // Apply shield effects
+  if (componentCounts.shield) {
+    const shields = componentCounts.shield;
+    maxHealth = 100 + (shields * COMPONENT_EFFECTS.shield.healthBonus);
+  }
+
+  return {
+    speed: Math.round(speed * 100) / 100, // Round to 2 decimals
+    cargoCapacity,
+    collectionRange,
+    maxHealth,
+    damage,
+    weaponRange,
+    componentCounts
+  };
+}
+
+// Update player ship properties based on components
+function updateShipProperties(player) {
+  const properties = calculateShipProperties(player);
+  
+  // Store properties on player object for easy access
+  player.shipProperties = properties;
+  
+  // Initialize health if not set
+  if (player.health === undefined) {
+    player.health = properties.maxHealth;
+  }
+  
+  // Cap current health to max health if shields were added
+  if (player.health > properties.maxHealth) {
+    player.health = properties.maxHealth;
+  }
+  
+  return properties;
+}
 
 // Initialize server
 async function initializeServer() {
@@ -382,6 +492,9 @@ wss.on('connection', async (ws) => {
           lastUpdate: Date.now()
         };
         
+        // Calculate and set ship properties based on modules
+        const properties = updateShipProperties(player);
+        
         activePlayers.set(ws, player);
         sessionId = await db.startGameSession(player.id);
         playerSessions.set(player.id, {
@@ -402,7 +515,8 @@ wss.on('connection', async (ws) => {
             resources: player.resources,
             level: player.level,
             experience: player.experience,
-            stats: player.stats
+            stats: player.stats,
+            shipProperties: properties
           }
         }));
         
@@ -477,7 +591,34 @@ wss.on('connection', async (ws) => {
           player.modules.push(newModule);
           player.stats.totalModulesBuilt += 1;
           
+          // Update ship properties immediately after adding component
+          const properties = updateShipProperties(player);
+          
           await db.addShipModule(player.id, newModule.id, item.type, newModule.x, newModule.y);
+          
+          // Send updated ship properties to client
+          ws.send(JSON.stringify({
+            type: 'shipProperties',
+            properties: properties
+          }));
+          
+          // Send notification about component effects
+          let effectMessage = `Added ${item.id} module! `;
+          if (item.id === 'engine') {
+            effectMessage += `Ship speed increased to ${properties.speed.toFixed(1)}!`;
+          } else if (item.id === 'cargo') {
+            effectMessage += `Cargo capacity increased to ${properties.cargoCapacity}!`;
+          } else if (item.id === 'weapon') {
+            effectMessage += `Damage increased to ${properties.damage}!`;
+          } else if (item.id === 'shield') {
+            effectMessage += `Max health increased to ${properties.maxHealth}!`;
+          }
+          
+          ws.send(JSON.stringify({
+            type: 'message',
+            message: effectMessage,
+            category: 'success'
+          }));
         }
         
         await db.updatePlayerStats(player.id, { 
@@ -542,7 +683,12 @@ function startGameLoop() {
   setInterval(async () => {
     // Update player positions
     activePlayers.forEach((p) => {
-      const speed = 2;
+      // Update ship properties if they don't exist or components changed
+      if (!p.shipProperties) {
+        updateShipProperties(p);
+      }
+      
+      const speed = p.shipProperties?.speed || BASE_SPEED;
       const oldX = p.x;
       const oldY = p.y;
       
@@ -560,13 +706,30 @@ function startGameLoop() {
     
     // Handle ore collection
     for (const [ws, p] of activePlayers.entries()) {
+      const collectionRange = p.shipProperties?.collectionRange || BASE_COLLECTION_RANGE;
+      const cargoCapacity = p.shipProperties?.cargoCapacity || BASE_CARGO_CAPACITY;
+      const collectionEfficiency = p.shipProperties?.componentCounts?.cargo ? 
+        1 + (p.shipProperties.componentCounts.cargo * COMPONENT_EFFECTS.cargo.efficiencyBonus) : 1;
+      
       for (const ore of ores) {
         const dx = p.x - ore.x;
         const dy = p.y - ore.y;
         const distSq = dx * dx + dy * dy;
         
-        if (distSq < 40 * 40) {
-          p.resources += ore.value;
+        if (distSq < collectionRange * collectionRange) {
+          // Check cargo capacity
+          if (p.resources >= cargoCapacity) {
+            // Send message about cargo being full
+            ws.send(JSON.stringify({
+              type: 'message',
+              message: `Cargo full! Capacity: ${cargoCapacity}. Need more cargo modules.`,
+              category: 'warning'
+            }));
+            continue;
+          }
+          
+          const collectedAmount = Math.round(ore.value * collectionEfficiency);
+          p.resources += collectedAmount;
           p.stats.totalResourcesCollected += ore.value;
           p.level = 1 + Math.floor(p.stats.totalResourcesCollected / 200);
           
