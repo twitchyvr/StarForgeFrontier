@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>StarForgeFrontier - Login</title>
+  <link rel="stylesheet" href="auth.css" />
+</head>
+<body>
+  <div class="auth-container">
+    <div class="stars-bg"></div>
+    
+    <div class="auth-panel">
+      <div class="game-logo">
+        <h1>StarForgeFrontier</h1>
+        <p>Explore the galaxy, forge your destiny</p>
+      </div>
+      
+      <div class="auth-forms">
+        <!-- Login Form -->
+        <div id="loginForm" class="form-container active">
+          <h2>Welcome Back, Pilot</h2>
+          <form id="login">
+            <div class="input-group">
+              <label for="loginUsername">Username</label>
+              <input type="text" id="loginUsername" name="username" required>
+            </div>
+            <div class="input-group">
+              <label for="loginPassword">Password</label>
+              <input type="password" id="loginPassword" name="password" required>
+            </div>
+            <button type="submit" class="auth-btn primary">Launch Ship</button>
+          </form>
+          <p class="form-switch">
+            New to the galaxy? <a href="#" id="showRegister">Create Account</a>
+          </p>
+        </div>
+        
+        <!-- Register Form -->
+        <div id="registerForm" class="form-container">
+          <h2>Join the Fleet</h2>
+          <form id="register">
+            <div class="input-group">
+              <label for="registerUsername">Username</label>
+              <input type="text" id="registerUsername" name="username" required minlength="3">
+              <span class="input-hint">3+ characters</span>
+            </div>
+            <div class="input-group">
+              <label for="registerEmail">Email</label>
+              <input type="email" id="registerEmail" name="email" required>
+            </div>
+            <div class="input-group">
+              <label for="registerPassword">Password</label>
+              <input type="password" id="registerPassword" name="password" required minlength="6">
+              <span class="input-hint">6+ characters</span>
+            </div>
+            <div class="input-group">
+              <label for="confirmPassword">Confirm Password</label>
+              <input type="password" id="confirmPassword" name="confirmPassword" required minlength="6">
+            </div>
+            <button type="submit" class="auth-btn primary">Register Ship</button>
+          </form>
+          <p class="form-switch">
+            Already enlisted? <a href="#" id="showLogin">Sign In</a>
+          </p>
+        </div>
+      </div>
+      
+      <!-- Guest Play Option -->
+      <div class="guest-play">
+        <p>Just want to try the game?</p>
+        <button id="guestPlay" class="auth-btn secondary">Play as Guest</button>
+        <small>Guest progress won't be saved</small>
+      </div>
+    </div>
+    
+    <!-- Error/Success Messages -->
+    <div id="messages" class="messages"></div>
+  </div>
+  
+  <script src="auth.js"></script>
+</body>
+</html>
