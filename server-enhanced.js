@@ -15,6 +15,9 @@ const http = require('http');
 const WebSocket = require('ws');
 const { v4: uuidv4 } = require('uuid');
 const Database = require('./database');
+const SectorManager = require('./galaxy/SectorManager');
+const WarpSystem = require('./galaxy/WarpSystem');
+const { ORE_TYPES } = require('./galaxy/Sector');
 
 const app = express();
 const server = http.createServer(app);
@@ -27,11 +30,15 @@ app.use(express.static('public'));
 // Initialize database
 const db = new Database();
 
+// Initialize galaxy systems
+let sectorManager = null;
+let warpSystem = null;
+
 // In-memory state for active gameplay
 const activePlayers = new Map(); // WebSocket connections
 const playerSessions = new Map(); // Game session tracking
-let ores = [];
-let events = [];
+let ores = []; // Legacy ores for sector 0,0 compatibility
+let events = []; // Legacy events for sector 0,0 compatibility
 
 // Combat system state
 const projectiles = new Map(); // Active projectiles
@@ -54,7 +61,9 @@ const ITEMS = {
   engine: { cost: 50, type: 'module', id: 'engine' },
   cargo:  { cost: 30, type: 'module', id: 'cargo' },
   weapon: { cost: 70, type: 'module', id: 'weapon' },
-  shield: { cost: 60, type: 'module', id: 'shield' }
+  shield: { cost: 60, type: 'module', id: 'shield' },
+  warp_drive: { cost: 150, type: 'module', id: 'warp_drive' },
+  scanner: { cost: 80, type: 'module', id: 'scanner' }
 };
 
 // Component effect definitions
@@ -74,6 +83,14 @@ const COMPONENT_EFFECTS = {
   shield: {
     healthBonus: 100,      // +100 health per shield
     regenBonus: 2          // +2 health regen per shield per second
+  },
+  warp_drive: {
+    fuelEfficiency: 0.25,  // -25% fuel cost per warp drive
+    speedBonus: 0.2        // -20% travel time per warp drive
+  },
+  scanner: {
+    rangeBonus: 2,         // +2 sector scan range per scanner
+    detectionBonus: 0.15   // +15% ore detection range per scanner
   }
 };
 
@@ -82,13 +99,17 @@ const ACHIEVEMENTS = {
   FIRST_STEPS: { type: 'movement', name: 'First Steps', desc: 'Move your ship for the first time', threshold: 1 },
   COLLECTOR: { type: 'resources', name: 'Collector', desc: 'Collect 100 resources', threshold: 100 },
   BUILDER: { type: 'modules', name: 'Builder', desc: 'Add your first module', threshold: 1 },
-  EXPLORER: { type: 'distance', name: 'Explorer', desc: 'Travel 1000 units', threshold: 1000 },
+  TRAVELER: { type: 'distance', name: 'Traveler', desc: 'Travel 1000 units', threshold: 1000 },
   WEALTHY: { type: 'resources', name: 'Wealthy', desc: 'Accumulate 500 resources', threshold: 500 },
   ENGINEER: { type: 'modules', name: 'Engineer', desc: 'Build 5 modules', threshold: 5 },
   FIRST_BLOOD: { type: 'kills', name: 'First Blood', desc: 'Destroy your first enemy ship', threshold: 1 },
   WARRIOR: { type: 'kills', name: 'Warrior', desc: 'Destroy 10 enemy ships', threshold: 10 },
   DESTROYER: { type: 'kills', name: 'Destroyer', desc: 'Destroy 25 enemy ships', threshold: 25 },
-  ACE_PILOT: { type: 'kills', name: 'Ace Pilot', desc: 'Destroy 50 enemy ships', threshold: 50 }
+  ACE_PILOT: { type: 'kills', name: 'Ace Pilot', desc: 'Destroy 50 enemy ships', threshold: 50 },
+  FIRST_WARP: { type: 'warps', name: 'First Warp', desc: 'Complete your first warp jump', threshold: 1 },
+  EXPLORER: { type: 'sectors', name: 'Explorer', desc: 'Discover 5 different sectors', threshold: 5 },
+  NAVIGATOR: { type: 'sectors', name: 'Navigator', desc: 'Discover 15 different sectors', threshold: 15 },
+  GALACTIC_CARTOGRAPHER: { type: 'sectors', name: 'Galactic Cartographer', desc: 'Discover 50 different sectors', threshold: 50 }
 };
 
 // Calculate ship properties based on installed components
@@ -146,6 +167,12 @@ function calculateShipProperties(player) {
     maxHealth = 100 + (shields * COMPONENT_EFFECTS.shield.healthBonus);
   }
 
+  // Apply scanner effects
+  if (componentCounts.scanner) {
+    const scanners = componentCounts.scanner;
+    collectionRange = collectionRange + (scanners * COMPONENT_EFFECTS.scanner.detectionBonus * collectionRange);
+  }
+
   return {
     speed: Math.round(speed * 100) / 100, // Round to 2 decimals
     cargoCapacity,
@@ -153,7 +180,9 @@ function calculateShipProperties(player) {
     maxHealth,
     damage,
     weaponRange,
-    componentCounts
+    componentCounts,
+    warpDrives: componentCounts.warp_drive || 0,
+    scanners: componentCounts.scanner || 0
   };
 }
 
@@ -183,7 +212,15 @@ async function initializeServer() {
     await db.initialize();
     console.log('Database initialized successfully');
     
-    // Spawn initial ores
+    // Initialize galaxy systems
+    sectorManager = new SectorManager(db);
+    warpSystem = new WarpSystem(db, sectorManager);
+    console.log('Galaxy systems initialized successfully');
+    
+    // Initialize starting sector (0,0) for backward compatibility
+    await initializeStartingSector();
+    
+    // Spawn initial ores in legacy format for sector 0,0
     spawnInitialOres();
     
     // Schedule first supernova
@@ -197,6 +234,127 @@ async function initializeServer() {
     process.exit(1);
   }
 }
+
+// Initialize starting sector for backward compatibility
+async function initializeStartingSector() {
+  try {
+    const startingSector = await sectorManager.getSector({ x: 0, y: 0 });
+    console.log(`Starting sector (0,0) initialized - Biome: ${startingSector.biome.name}`);
+  } catch (error) {
+    console.error('Error initializing starting sector:', error);
+  }
+}
+
+// Galaxy API endpoints
+app.get('/api/galaxy/map/:x/:y', async (req, res) => {
+  try {
+    const centerX = parseInt(req.params.x);
+    const centerY = parseInt(req.params.y);
+    const radius = parseInt(req.query.radius) || 5;
+    
+    if (isNaN(centerX) || isNaN(centerY)) {
+      return res.status(400).json({ error: 'Invalid coordinates' });
+    }
+    
+    const mapData = sectorManager.getGalaxyMapData({ x: centerX, y: centerY }, radius);
+    res.json(mapData);
+    
+  } catch (error) {
+    console.error('Galaxy map error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.get('/api/galaxy/warp-targets/:playerId', async (req, res) => {
+  try {
+    const { playerId } = req.params;
+    const maxRange = parseInt(req.query.range) || 5;
+    
+    const playerData = await db.getPlayerData(playerId);
+    if (!playerData) {
+      return res.status(404).json({ error: 'Player not found' });
+    }
+    
+    const destinations = await warpSystem.getWarpDestinations(playerId, playerData, maxRange);
+    res.json(destinations);
+    
+  } catch (error) {
+    console.error('Warp targets error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.post('/api/galaxy/warp', async (req, res) => {
+  try {
+    const { playerId, targetX, targetY, isEmergencyWarp } = req.body;
+    
+    if (!playerId || isNaN(targetX) || isNaN(targetY)) {
+      return res.status(400).json({ error: 'Invalid warp parameters' });
+    }
+    
+    const playerData = await db.getPlayerData(playerId);
+    if (!playerData) {
+      return res.status(404).json({ error: 'Player not found' });
+    }
+    
+    const targetCoords = { x: parseInt(targetX), y: parseInt(targetY) };
+    
+    let result;
+    if (isEmergencyWarp) {
+      result = await warpSystem.emergencyWarp(playerId, playerData, targetCoords);
+    } else {
+      result = await warpSystem.initiateWarp(playerId, playerData, targetCoords);
+    }
+    
+    res.json(result);
+    
+  } catch (error) {
+    console.error('Warp initiation error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.get('/api/galaxy/stats', async (req, res) => {
+  try {
+    const galaxyStats = await db.getGalaxyStats();
+    const sectorManagerStats = sectorManager.getGalaxyStats();
+    const warpSystemStats = warpSystem.getSystemStatus();
+    
+    res.json({
+      galaxy: galaxyStats,
+      sectorManager: sectorManagerStats,
+      warpSystem: warpSystemStats
+    });
+    
+  } catch (error) {
+    console.error('Galaxy stats error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.get('/api/player/:playerId/warp-stats', async (req, res) => {
+  try {
+    const { playerId } = req.params;
+    const warpStats = await warpSystem.getPlayerWarpStats(playerId);
+    res.json(warpStats);
+    
+  } catch (error) {
+    console.error('Player warp stats error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.get('/api/player/:playerId/discoveries', async (req, res) => {
+  try {
+    const { playerId } = req.params;
+    const discoveries = await db.getPlayerDiscoveries(playerId);
+    res.json(discoveries);
+    
+  } catch (error) {
+    console.error('Player discoveries error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
 
 // Authentication endpoints
 app.post('/api/register', async (req, res) => {
@@ -385,12 +543,55 @@ function broadcastState() {
     });
   });
   
+  // Get ores from current sectors instead of global ores
+  let currentOres = ores; // Legacy fallback
+  
+  if (sectorManager) {
+    // Collect ores from all loaded sectors
+    const allSectorOres = [];
+    for (const sector of sectorManager.loadedSectors.values()) {
+      if (sector.isLoaded) {
+        allSectorOres.push(...sector.ores);
+      }
+    }
+    
+    if (allSectorOres.length > 0) {
+      currentOres = allSectorOres;
+    }
+  }
+  
   const state = {
     type: 'update',
     players: playerList,
-    ores
+    ores: currentOres
   };
   broadcast(state);
+}
+
+// Broadcast sector-specific events
+function broadcastSectorEvent(event) {
+  // Find players in the affected sector
+  const sectorKey = `${event.sectorCoordinates.x}_${event.sectorCoordinates.y}`;
+  const playersInSector = [];
+  
+  for (const [ws, player] of activePlayers.entries()) {
+    const playerSectorKey = sectorManager.playerSectors.get(player.id);
+    if (playerSectorKey === sectorKey) {
+      playersInSector.push(ws);
+    }
+  }
+  
+  // Broadcast to players in the sector
+  const payload = JSON.stringify({
+    type: 'sector_event',
+    event: event
+  });
+  
+  playersInSector.forEach(ws => {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(payload);
+    }
+  });
 }
 
 // Achievement checking
@@ -416,9 +617,9 @@ async function checkAchievements(player) {
     }
   }
   
-  if (player.stats.totalDistanceTraveled >= ACHIEVEMENTS.EXPLORER.threshold) {
-    if (await db.awardAchievement(player.id, 'distance', ACHIEVEMENTS.EXPLORER.name, ACHIEVEMENTS.EXPLORER.desc)) {
-      achievements.push(ACHIEVEMENTS.EXPLORER);
+  if (player.stats.totalDistanceTraveled >= ACHIEVEMENTS.TRAVELER.threshold) {
+    if (await db.awardAchievement(player.id, 'distance', ACHIEVEMENTS.TRAVELER.name, ACHIEVEMENTS.TRAVELER.desc)) {
+      achievements.push(ACHIEVEMENTS.TRAVELER);
     }
   }
   
@@ -749,6 +950,10 @@ wss.on('connection', async (ws) => {
           lastUpdate: Date.now()
         };
         
+        // Initialize player in sector system
+        const currentCoords = sectorManager.getSectorCoordinatesForPosition(player.x, player.y);
+        await sectorManager.movePlayerToSector(player.id, currentCoords, { x: player.x, y: player.y });
+        
         // Calculate and set ship properties based on modules
         const properties = updateShipProperties(player);
         
@@ -899,6 +1104,84 @@ wss.on('connection', async (ws) => {
     } else if (data.type === 'respawn') {
       // Handle player respawn
       handlePlayerRespawn(ws, player);
+      
+    } else if (data.type === 'request_galaxy_map') {
+      // Send galaxy map data around player's current sector
+      const currentCoords = sectorManager.getSectorCoordinatesForPosition(player.x, player.y);
+      const radius = data.radius || 5;
+      const mapData = sectorManager.getGalaxyMapData(currentCoords, radius);
+      
+      ws.send(JSON.stringify({
+        type: 'galaxy_map',
+        mapData,
+        currentSector: currentCoords
+      }));
+      
+    } else if (data.type === 'request_warp_targets') {
+      // Send available warp destinations
+      const destinations = await warpSystem.getWarpDestinations(player.id, player, data.maxRange || 5);
+      
+      ws.send(JSON.stringify({
+        type: 'warp_targets',
+        destinations,
+        warpDriveRating: warpSystem.getWarpDriveRating(player)
+      }));
+      
+    } else if (data.type === 'initiate_warp') {
+      // Handle warp initiation
+      const targetCoords = { x: data.targetX, y: data.targetY };
+      const result = await warpSystem.initiateWarp(player.id, player, targetCoords, data.isEmergencyWarp);
+      
+      ws.send(JSON.stringify({
+        type: 'warp_result',
+        result
+      }));
+      
+      // If warp was successful, inform other players in current sector
+      if (result.success && !data.isEmergencyWarp) {
+        broadcast({
+          type: 'player_warp_start',
+          playerId: player.id,
+          playerName: player.username,
+          fromCoords: result.fromCoords,
+          toCoords: result.toCoords,
+          travelTime: result.travelTime
+        });
+      }
+      
+    } else if (data.type === 'cancel_warp') {
+      // Handle warp cancellation
+      const result = await warpSystem.cancelWarp(player.id);
+      
+      if (result.success && result.fuelRefund > 0) {
+        player.resources += result.fuelRefund;
+        await db.updatePlayerStats(player.id, { resources: player.resources });
+      }
+      
+      ws.send(JSON.stringify({
+        type: 'warp_cancelled',
+        result
+      }));
+      
+    } else if (data.type === 'request_warp_status') {
+      // Send current warp status
+      const warpStatus = warpSystem.getWarpStatus(player.id);
+      
+      ws.send(JSON.stringify({
+        type: 'warp_status',
+        status: warpStatus
+      }));
+      
+    } else if (data.type === 'request_sector_info') {
+      // Send detailed information about current sector
+      const currentSector = sectorManager.getPlayerSector(player.id);
+      
+      if (currentSector) {
+        ws.send(JSON.stringify({
+          type: 'sector_info',
+          sector: currentSector.getSectorData()
+        }));
+      }
     }
   });
   
@@ -907,6 +1190,11 @@ wss.on('connection', async (ws) => {
     if (player) {
       activePlayers.delete(ws);
       broadcast({ type: 'player_disconnect', id: player.id });
+      
+      // Remove from sector system
+      if (sectorManager) {
+        await sectorManager.handlePlayerLeave(player.id);
+      }
       
       // Save final position and stats
       await db.updatePlayerPosition(player.id, player.x, player.y);
@@ -949,6 +1237,37 @@ function startGameLoop() {
     // Process combat projectiles
     await processProjectileHits();
     
+    // Process warp completions
+    if (warpSystem) {
+      const completedWarps = await warpSystem.processWarpCompletions();
+      for (const { playerId, warpOp } of completedWarps) {
+        const player = Array.from(activePlayers.values()).find(p => p.id === playerId);
+        if (player) {
+          const result = await warpSystem.completeWarp(playerId, warpOp, player);
+          if (result.success) {
+            // Find player's WebSocket and notify of warp completion
+            const playerWs = Array.from(activePlayers.entries()).find(([ws, p]) => p.id === playerId)?.[0];
+            if (playerWs) {
+              playerWs.send(JSON.stringify({
+                type: 'warp_completed',
+                result
+              }));
+            }
+          }
+        }
+      }
+    }
+    
+    // Update all loaded sectors
+    if (sectorManager) {
+      const triggeredEvents = sectorManager.updateAllSectors();
+      
+      // Broadcast sector events to players in affected sectors
+      for (const event of triggeredEvents) {
+        broadcastSectorEvent(event);
+      }
+    }
+    
     // Update player positions
     activePlayers.forEach((p) => {
       // Skip movement if dead
@@ -984,7 +1303,7 @@ function startGameLoop() {
       }
     });
     
-    // Handle ore collection
+    // Handle ore collection (both legacy and sector-based)
     for (const [ws, p] of activePlayers.entries()) {
       // Skip ore collection for dead players
       if (p.isDead) {
@@ -996,36 +1315,89 @@ function startGameLoop() {
       const collectionEfficiency = p.shipProperties?.componentCounts?.cargo ? 
         1 + (p.shipProperties.componentCounts.cargo * COMPONENT_EFFECTS.cargo.efficiencyBonus) : 1;
       
-      for (const ore of ores) {
-        const dx = p.x - ore.x;
-        const dy = p.y - ore.y;
-        const distSq = dx * dx + dy * dy;
-        
-        if (distSq < collectionRange * collectionRange) {
-          // Check cargo capacity
-          if (p.resources >= cargoCapacity) {
-            // Send message about cargo being full
+      // Get player's current sector
+      const currentSector = sectorManager ? sectorManager.getPlayerSector(p.id) : null;
+      
+      if (currentSector && currentSector.isLoaded) {
+        // Use sector-based ore collection
+        for (const ore of currentSector.ores) {
+          const dx = p.x - ore.x;
+          const dy = p.y - ore.y;
+          const distSq = dx * dx + dy * dy;
+          
+          if (distSq < collectionRange * collectionRange) {
+            // Check cargo capacity
+            if (p.resources >= cargoCapacity) {
+              ws.send(JSON.stringify({
+                type: 'message',
+                message: `Cargo full! Capacity: ${cargoCapacity}. Need more cargo modules.`,
+                category: 'warning'
+              }));
+              continue;
+            }
+            
+            const oreTypeData = ORE_TYPES[ore.type] || { value: ore.value };
+            const collectedAmount = Math.round(oreTypeData.value * collectionEfficiency);
+            p.resources += collectedAmount;
+            p.stats.totalResourcesCollected += oreTypeData.value;
+            p.level = 1 + Math.floor(p.stats.totalResourcesCollected / 200);
+            
+            // Remove ore from sector
+            currentSector.removeOre(ore.id);
+            
+            // Mark ore as collected in database
+            await db.collectSectorOre(ore.id, p.id);
+            
+            // Send ore collection notification with type info
             ws.send(JSON.stringify({
-              type: 'message',
-              message: `Cargo full! Capacity: ${cargoCapacity}. Need more cargo modules.`,
-              category: 'warning'
+              type: 'ore_collected',
+              oreType: ore.type,
+              oreName: oreTypeData.name || ore.type,
+              value: collectedAmount,
+              oreColor: oreTypeData.color || '#FFD700'
             }));
-            continue;
+            
+            // Check for achievements
+            const achievements = await checkAchievements(p);
+            if (achievements.length > 0) {
+              ws.send(JSON.stringify({ type: 'achievements', achievements }));
+            }
+            
+            break;
           }
+        }
+      } else {
+        // Fallback to legacy ore collection for backward compatibility
+        for (const ore of ores) {
+          const dx = p.x - ore.x;
+          const dy = p.y - ore.y;
+          const distSq = dx * dx + dy * dy;
           
-          const collectedAmount = Math.round(ore.value * collectionEfficiency);
-          p.resources += collectedAmount;
-          p.stats.totalResourcesCollected += ore.value;
-          p.level = 1 + Math.floor(p.stats.totalResourcesCollected / 200);
-          
-          // Check for achievements
-          const achievements = await checkAchievements(p);
-          if (achievements.length > 0) {
-            ws.send(JSON.stringify({ type: 'achievements', achievements }));
+          if (distSq < collectionRange * collectionRange) {
+            // Check cargo capacity
+            if (p.resources >= cargoCapacity) {
+              ws.send(JSON.stringify({
+                type: 'message',
+                message: `Cargo full! Capacity: ${cargoCapacity}. Need more cargo modules.`,
+                category: 'warning'
+              }));
+              continue;
+            }
+            
+            const collectedAmount = Math.round(ore.value * collectionEfficiency);
+            p.resources += collectedAmount;
+            p.stats.totalResourcesCollected += ore.value;
+            p.level = 1 + Math.floor(p.stats.totalResourcesCollected / 200);
+            
+            // Check for achievements
+            const achievements = await checkAchievements(p);
+            if (achievements.length > 0) {
+              ws.send(JSON.stringify({ type: 'achievements', achievements }));
+            }
+            
+            removeOre(ore.id);
+            break;
           }
-          
-          removeOre(ore.id);
-          break;
         }
       }
     }
@@ -1098,6 +1470,11 @@ process.on('SIGINT', async () => {
       experience: player.experience
     });
     
+    // Remove from sector system
+    if (sectorManager) {
+      await sectorManager.handlePlayerLeave(player.id);
+    }
+    
     // End game sessions
     if (playerSessions.has(player.id)) {
       const session = playerSessions.get(player.id);
@@ -1112,6 +1489,11 @@ process.on('SIGINT', async () => {
         distanceTraveled: player.stats.totalDistanceTraveled
       });
     }
+  }
+  
+  // Save all loaded sector data
+  if (sectorManager) {
+    await sectorManager.saveAllSectors();
   }
   
   await db.close();

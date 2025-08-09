@@ -135,6 +135,88 @@ class Database {
         score INTEGER,
         achieved_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (player_id) REFERENCES players (id)
+      )`,
+
+      // Galaxy sectors table
+      `CREATE TABLE IF NOT EXISTS galaxy_sectors (
+        sector_x INTEGER,
+        sector_y INTEGER,
+        seed INTEGER NOT NULL,
+        biome_type TEXT NOT NULL,
+        biome_data TEXT, -- JSON data for biome configuration
+        last_updated DATETIME DEFAULT CURRENT_TIMESTAMP,
+        player_count INTEGER DEFAULT 0,
+        is_discovered BOOLEAN DEFAULT 0,
+        PRIMARY KEY (sector_x, sector_y)
+      )`,
+
+      // Sector ores table
+      `CREATE TABLE IF NOT EXISTS sector_ores (
+        id TEXT PRIMARY KEY,
+        sector_x INTEGER,
+        sector_y INTEGER,
+        ore_type TEXT NOT NULL,
+        x REAL NOT NULL,
+        y REAL NOT NULL,
+        value INTEGER NOT NULL,
+        spawned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        is_collected BOOLEAN DEFAULT 0,
+        collected_by TEXT,
+        collected_at DATETIME,
+        FOREIGN KEY (sector_x, sector_y) REFERENCES galaxy_sectors (sector_x, sector_y),
+        FOREIGN KEY (collected_by) REFERENCES players (id)
+      )`,
+
+      // Sector environmental hazards table
+      `CREATE TABLE IF NOT EXISTS sector_hazards (
+        id TEXT PRIMARY KEY,
+        sector_x INTEGER,
+        sector_y INTEGER,
+        hazard_type TEXT NOT NULL,
+        x REAL NOT NULL,
+        y REAL NOT NULL,
+        properties TEXT, -- JSON data for hazard-specific properties
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        expires_at DATETIME,
+        FOREIGN KEY (sector_x, sector_y) REFERENCES galaxy_sectors (sector_x, sector_y)
+      )`,
+
+      // Player sector locations and warp history
+      `CREATE TABLE IF NOT EXISTS player_sector_locations (
+        player_id TEXT PRIMARY KEY,
+        current_sector_x INTEGER DEFAULT 0,
+        current_sector_y INTEGER DEFAULT 0,
+        last_warp_at DATETIME,
+        total_warps INTEGER DEFAULT 0,
+        total_fuel_consumed INTEGER DEFAULT 0,
+        FOREIGN KEY (player_id) REFERENCES players (id),
+        FOREIGN KEY (current_sector_x, current_sector_y) REFERENCES galaxy_sectors (sector_x, sector_y)
+      )`,
+
+      // Warp routes and travel history
+      `CREATE TABLE IF NOT EXISTS warp_routes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        player_id TEXT,
+        from_sector_x INTEGER,
+        from_sector_y INTEGER,
+        to_sector_x INTEGER,
+        to_sector_y INTEGER,
+        fuel_cost INTEGER,
+        travel_time INTEGER,
+        warped_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (player_id) REFERENCES players (id)
+      )`,
+
+      // Sector discoveries and exploration
+      `CREATE TABLE IF NOT EXISTS sector_discoveries (
+        player_id TEXT,
+        sector_x INTEGER,
+        sector_y INTEGER,
+        discovered_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        exploration_percentage REAL DEFAULT 0,
+        PRIMARY KEY (player_id, sector_x, sector_y),
+        FOREIGN KEY (player_id) REFERENCES players (id),
+        FOREIGN KEY (sector_x, sector_y) REFERENCES galaxy_sectors (sector_x, sector_y)
       )`
     ];
 
@@ -208,6 +290,12 @@ class Database {
       await this.run(
         'INSERT INTO player_positions (player_id, x, y) VALUES (?, ?, ?)',
         [playerId, Math.random() * 800 - 400, Math.random() * 800 - 400]
+      );
+      
+      // Insert default sector location (start in sector 0,0)
+      await this.run(
+        'INSERT INTO player_sector_locations (player_id, current_sector_x, current_sector_y) VALUES (?, ?, ?)',
+        [playerId, 0, 0]
       );
       
       await this.run('COMMIT');
@@ -456,6 +544,258 @@ class Database {
        LIMIT ?`,
       [category, limit]
     );
+  }
+
+  /**
+   * Save sector data to database
+   */
+  async saveSectorData(sectorData) {
+    await this.run(
+      `INSERT OR REPLACE INTO galaxy_sectors 
+       (sector_x, sector_y, seed, biome_type, biome_data, last_updated, player_count, is_discovered) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        sectorData.sector_x,
+        sectorData.sector_y, 
+        sectorData.seed,
+        sectorData.biome_type,
+        sectorData.biome_data,
+        sectorData.last_updated,
+        sectorData.player_count || 0,
+        sectorData.is_discovered || 0
+      ]
+    );
+  }
+
+  /**
+   * Get sector data from database
+   */
+  async getSectorData(sectorX, sectorY) {
+    return await this.get(
+      'SELECT * FROM galaxy_sectors WHERE sector_x = ? AND sector_y = ?',
+      [sectorX, sectorY]
+    );
+  }
+
+  /**
+   * Save ore to sector
+   */
+  async saveSectorOre(oreData) {
+    await this.run(
+      `INSERT OR REPLACE INTO sector_ores 
+       (id, sector_x, sector_y, ore_type, x, y, value, spawned_at, is_collected) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        oreData.id,
+        oreData.sector_x,
+        oreData.sector_y,
+        oreData.ore_type,
+        oreData.x,
+        oreData.y,
+        oreData.value,
+        oreData.spawned_at,
+        oreData.is_collected || 0
+      ]
+    );
+  }
+
+  /**
+   * Get ores for a sector
+   */
+  async getSectorOres(sectorX, sectorY) {
+    return await this.all(
+      'SELECT * FROM sector_ores WHERE sector_x = ? AND sector_y = ? AND is_collected = 0',
+      [sectorX, sectorY]
+    );
+  }
+
+  /**
+   * Mark ore as collected
+   */
+  async collectSectorOre(oreId, playerId) {
+    await this.run(
+      'UPDATE sector_ores SET is_collected = 1, collected_by = ?, collected_at = CURRENT_TIMESTAMP WHERE id = ?',
+      [playerId, oreId]
+    );
+  }
+
+  /**
+   * Get environmental hazards for a sector
+   */
+  async getSectorHazards(sectorX, sectorY) {
+    const hazards = await this.all(
+      'SELECT * FROM sector_hazards WHERE sector_x = ? AND sector_y = ? AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP)',
+      [sectorX, sectorY]
+    );
+    
+    return hazards.map(hazard => ({
+      id: hazard.id,
+      type: hazard.hazard_type,
+      x: hazard.x,
+      y: hazard.y,
+      properties: hazard.properties ? JSON.parse(hazard.properties) : {},
+      createdAt: hazard.created_at,
+      expiresAt: hazard.expires_at
+    }));
+  }
+
+  /**
+   * Save environmental hazard
+   */
+  async saveSectorHazard(hazardData) {
+    await this.run(
+      `INSERT INTO sector_hazards 
+       (id, sector_x, sector_y, hazard_type, x, y, properties, expires_at) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        hazardData.id,
+        hazardData.sector_x,
+        hazardData.sector_y,
+        hazardData.hazard_type,
+        hazardData.x,
+        hazardData.y,
+        JSON.stringify(hazardData.properties || {}),
+        hazardData.expires_at
+      ]
+    );
+  }
+
+  /**
+   * Update player sector location
+   */
+  async updatePlayerSectorLocation(playerId, sectorX, sectorY, isWarp = false) {
+    // Update or insert player sector location
+    const existing = await this.get(
+      'SELECT player_id FROM player_sector_locations WHERE player_id = ?',
+      [playerId]
+    );
+    
+    if (existing) {
+      const updates = ['current_sector_x = ?', 'current_sector_y = ?'];
+      const values = [sectorX, sectorY];
+      
+      if (isWarp) {
+        updates.push('last_warp_at = CURRENT_TIMESTAMP');
+        updates.push('total_warps = total_warps + 1');
+      }
+      
+      values.push(playerId);
+      
+      await this.run(
+        `UPDATE player_sector_locations SET ${updates.join(', ')} WHERE player_id = ?`,
+        values
+      );
+    } else {
+      await this.run(
+        `INSERT INTO player_sector_locations 
+         (player_id, current_sector_x, current_sector_y, total_warps) 
+         VALUES (?, ?, ?, ?)`,
+        [playerId, sectorX, sectorY, isWarp ? 1 : 0]
+      );
+    }
+  }
+
+  /**
+   * Get player's current sector location
+   */
+  async getPlayerSectorLocation(playerId) {
+    return await this.get(
+      'SELECT * FROM player_sector_locations WHERE player_id = ?',
+      [playerId]
+    );
+  }
+
+  /**
+   * Record a warp route
+   */
+  async recordWarpRoute(playerId, fromX, fromY, toX, toY, fuelCost, travelTime) {
+    await this.run(
+      `INSERT INTO warp_routes 
+       (player_id, from_sector_x, from_sector_y, to_sector_x, to_sector_y, fuel_cost, travel_time) 
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [playerId, fromX, fromY, toX, toY, fuelCost, travelTime]
+    );
+    
+    // Update fuel consumption total
+    await this.run(
+      'UPDATE player_sector_locations SET total_fuel_consumed = total_fuel_consumed + ? WHERE player_id = ?',
+      [fuelCost, playerId]
+    );
+  }
+
+  /**
+   * Record sector discovery
+   */
+  async recordSectorDiscovery(playerId, sectorX, sectorY, explorationPercentage = 0) {
+    await this.run(
+      `INSERT OR REPLACE INTO sector_discoveries 
+       (player_id, sector_x, sector_y, exploration_percentage) 
+       VALUES (?, ?, ?, ?)`,
+      [playerId, sectorX, sectorY, explorationPercentage]
+    );
+    
+    // Mark sector as discovered
+    await this.run(
+      'UPDATE galaxy_sectors SET is_discovered = 1 WHERE sector_x = ? AND sector_y = ?',
+      [sectorX, sectorY]
+    );
+  }
+
+  /**
+   * Get player's discovered sectors
+   */
+  async getPlayerDiscoveries(playerId) {
+    return await this.all(
+      `SELECT sd.*, gs.biome_type, gs.biome_data 
+       FROM sector_discoveries sd 
+       JOIN galaxy_sectors gs ON sd.sector_x = gs.sector_x AND sd.sector_y = gs.sector_y 
+       WHERE sd.player_id = ? 
+       ORDER BY sd.discovered_at DESC`,
+      [playerId]
+    );
+  }
+
+  /**
+   * Get warp history for a player
+   */
+  async getPlayerWarpHistory(playerId, limit = 20) {
+    return await this.all(
+      'SELECT * FROM warp_routes WHERE player_id = ? ORDER BY warped_at DESC LIMIT ?',
+      [playerId, limit]
+    );
+  }
+
+  /**
+   * Update sector player count
+   */
+  async updateSectorPlayerCount(sectorX, sectorY, playerCount) {
+    await this.run(
+      'UPDATE galaxy_sectors SET player_count = ?, last_updated = CURRENT_TIMESTAMP WHERE sector_x = ? AND sector_y = ?',
+      [playerCount, sectorX, sectorY]
+    );
+  }
+
+  /**
+   * Get galaxy statistics
+   */
+  async getGalaxyStats() {
+    const sectorCount = await this.get('SELECT COUNT(*) as count FROM galaxy_sectors');
+    const discoveredCount = await this.get('SELECT COUNT(*) as count FROM galaxy_sectors WHERE is_discovered = 1');
+    const totalOres = await this.get('SELECT COUNT(*) as count FROM sector_ores WHERE is_collected = 0');
+    const totalWarps = await this.get('SELECT COUNT(*) as count FROM warp_routes');
+    
+    const biomeDistribution = await this.all(
+      'SELECT biome_type, COUNT(*) as count FROM galaxy_sectors GROUP BY biome_type ORDER BY count DESC'
+    );
+    
+    return {
+      totalSectors: sectorCount.count,
+      discoveredSectors: discoveredCount.count,
+      explorationPercentage: (discoveredCount.count / Math.max(1, sectorCount.count)) * 100,
+      totalOres: totalOres.count,
+      totalWarps: totalWarps.count,
+      biomeDistribution
+    };
   }
 
   /**
