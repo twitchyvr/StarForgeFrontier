@@ -42,6 +42,21 @@
       </div>
     </div>
     
+    <div class="hud-section combat-stats">
+      <div class="stat-item">
+        <span class="stat-label">Health</span>
+        <span id="shipHealth" class="stat-value">100/100</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">Damage</span>
+        <span id="shipDamage" class="stat-value">0</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">Weapon Range</span>
+        <span id="shipWeaponRange" class="stat-value">0</span>
+      </div>
+    </div>
+    
     <div class="hud-section quick-actions">
       <button id="addEngine" class="action-btn" title="Add Engine Module">
         <span class="btn-icon">⚙</span>
@@ -51,10 +66,29 @@
         <span class="btn-icon">📦</span>
         <span class="btn-text">Cargo (30)</span>
       </button>
+      <button id="addWeapon" class="action-btn" title="Add Weapon Module">
+        <span class="btn-icon">⚔</span>
+        <span class="btn-text">Weapon (70)</span>
+      </button>
+      <button id="addShield" class="action-btn" title="Add Shield Module">
+        <span class="btn-icon">🛡</span>
+        <span class="btn-text">Shield (60)</span>
+      </button>
       <button id="shopToggle" class="action-btn" title="Open Shop">
         <span class="btn-icon">🛒</span>
         <span class="btn-text">Shop</span>
       </button>
+    </div>
+    
+    <!-- Weapon Cooldown Indicator -->
+    <div class="hud-section weapon-status">
+      <div class="weapon-cooldown-container">
+        <div class="weapon-cooldown-label">Weapon</div>
+        <div class="weapon-cooldown-bar">
+          <div id="weaponCooldownBar" class="weapon-cooldown-fill"></div>
+        </div>
+        <div id="selectedTargetName" class="target-name">No Target</div>
+      </div>
     </div>
   </div>
   
@@ -75,6 +109,14 @@
   <!-- Notification Area -->
   <div id="notifications"></div>
   
+  <!-- Combat Log -->
+  <div id="combatLogPanel" class="combat-log-panel">
+    <div class="combat-log-header">Combat Log</div>
+    <div id="combatLog" class="combat-log-content">
+      <!-- Combat log entries will be populated here -->
+    </div>
+  </div>
+  
   <!-- Controls Help -->
   <div id="controls" class="help-panel">
     <div class="help-title">Controls</div>
@@ -82,6 +124,9 @@
       <div>WASD / Arrows - Move</div>
       <div>Scroll - Zoom</div>
       <div>Tab - Toggle Shop</div>
+      <div>Click - Target Enemy</div>
+      <div>Space - Fire Weapon</div>
+      <div>Shift+Tab - Cycle Targets</div>
     </div>
   </div>
   

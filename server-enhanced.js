@@ -33,6 +33,16 @@ const playerSessions = new Map(); // Game session tracking
 let ores = [];
 let events = [];
 
+// Combat system state
+const projectiles = new Map(); // Active projectiles
+const weaponCooldowns = new Map(); // Player weapon cooldowns
+
+// Combat constants
+const WEAPON_COOLDOWN = 1000; // 1 second in milliseconds
+const PROJECTILE_SPEED = 300; // pixels per second
+const RESPAWN_DELAY = 3000; // 3 seconds
+const INVULNERABILITY_TIME = 2000; // 2 seconds after respawn
+
 // Game constants
 const STARTING_RESOURCES = 100;
 const ORE_VALUE = 25;
@@ -74,7 +84,11 @@ const ACHIEVEMENTS = {
   BUILDER: { type: 'modules', name: 'Builder', desc: 'Add your first module', threshold: 1 },
   EXPLORER: { type: 'distance', name: 'Explorer', desc: 'Travel 1000 units', threshold: 1000 },
   WEALTHY: { type: 'resources', name: 'Wealthy', desc: 'Accumulate 500 resources', threshold: 500 },
-  ENGINEER: { type: 'modules', name: 'Engineer', desc: 'Build 5 modules', threshold: 5 }
+  ENGINEER: { type: 'modules', name: 'Engineer', desc: 'Build 5 modules', threshold: 5 },
+  FIRST_BLOOD: { type: 'kills', name: 'First Blood', desc: 'Destroy your first enemy ship', threshold: 1 },
+  WARRIOR: { type: 'kills', name: 'Warrior', desc: 'Destroy 10 enemy ships', threshold: 10 },
+  DESTROYER: { type: 'kills', name: 'Destroyer', desc: 'Destroy 25 enemy ships', threshold: 25 },
+  ACE_PILOT: { type: 'kills', name: 'Ace Pilot', desc: 'Destroy 50 enemy ships', threshold: 50 }
 };
 
 // Calculate ship properties based on installed components
@@ -429,6 +443,249 @@ async function updateLeaderboards(player) {
   await db.updateLeaderboard(player.id, 'level', player.level);
   await db.updateLeaderboard(player.id, 'modules', player.stats.totalModulesBuilt);
   await db.updateLeaderboard(player.id, 'distance', Math.floor(player.stats.totalDistanceTraveled));
+  await db.updateLeaderboard(player.id, 'kills', player.stats.kills || 0);
+  if (player.stats.deaths > 0) {
+    await db.updateLeaderboard(player.id, 'kdr', Math.round((player.stats.kills / player.stats.deaths) * 100) / 100);
+  }
+}
+
+// Combat system functions
+function handleWeaponFire(ws, player, data) {
+  // Check if player is alive
+  if (player.isDead) {
+    return;
+  }
+  
+  // Check if player has weapons
+  if (!player.shipProperties || player.shipProperties.damage <= 0) {
+    ws.send(JSON.stringify({ 
+      type: 'error', 
+      message: 'No weapons equipped!' 
+    }));
+    return;
+  }
+  
+  // Check weapon cooldown
+  const now = Date.now();
+  const lastFire = weaponCooldowns.get(player.id) || 0;
+  if (now - lastFire < WEAPON_COOLDOWN) {
+    return;
+  }
+  
+  // Find target player
+  const targetPlayer = Array.from(activePlayers.values()).find(p => p.id === data.targetId);
+  if (!targetPlayer || targetPlayer.isDead) {
+    return;
+  }
+  
+  // Check range
+  const dx = targetPlayer.x - player.x;
+  const dy = targetPlayer.y - player.y;
+  const distance = Math.sqrt(dx * dx + dy * dy);
+  const weaponRange = player.shipProperties.weaponRange || 0;
+  
+  if (distance > weaponRange) {
+    ws.send(JSON.stringify({ 
+      type: 'error', 
+      message: 'Target out of range!' 
+    }));
+    return;
+  }
+  
+  // Create projectile
+  const projectileId = uuidv4();
+  const projectile = {
+    id: projectileId,
+    fromId: player.id,
+    targetId: data.targetId,
+    x: player.x,
+    y: player.y,
+    targetX: targetPlayer.x,
+    targetY: targetPlayer.y,
+    damage: player.shipProperties.damage,
+    startTime: now,
+    duration: distance / PROJECTILE_SPEED * 1000 // milliseconds
+  };
+  
+  projectiles.set(projectileId, projectile);
+  weaponCooldowns.set(player.id, now);
+  
+  // Broadcast projectile to all players
+  broadcast({
+    type: 'projectile',
+    projectile: {
+      id: projectileId,
+      fromId: player.id,
+      x: player.x,
+      y: player.y,
+      targetX: targetPlayer.x,
+      targetY: targetPlayer.y,
+      duration: projectile.duration
+    }
+  });
+}
+
+async function processProjectileHits() {
+  const now = Date.now();
+  const hitProjectiles = [];
+  
+  for (const [id, projectile] of projectiles.entries()) {
+    if (now >= projectile.startTime + projectile.duration) {
+      hitProjectiles.push(projectile);
+      projectiles.delete(id);
+    }
+  }
+  
+  for (const projectile of hitProjectiles) {
+    await processHit(projectile);
+  }
+}
+
+async function processHit(projectile) {
+  // Find target player
+  const targetPlayer = Array.from(activePlayers.values()).find(p => p.id === projectile.targetId);
+  const shooterPlayer = Array.from(activePlayers.values()).find(p => p.id === projectile.fromId);
+  
+  if (!targetPlayer || targetPlayer.isDead || !shooterPlayer) {
+    return;
+  }
+  
+  // Check invulnerability
+  if (targetPlayer.invulnerableUntil && Date.now() < targetPlayer.invulnerableUntil) {
+    return;
+  }
+  
+  // Apply damage
+  const damage = projectile.damage;
+  targetPlayer.health = Math.max(0, (targetPlayer.health || targetPlayer.shipProperties.maxHealth) - damage);
+  
+  // Find target WebSocket
+  const targetWs = Array.from(activePlayers.entries()).find(([ws, p]) => p.id === targetPlayer.id)?.[0];
+  
+  // Broadcast hit
+  broadcast({
+    type: 'hit',
+    targetId: targetPlayer.id,
+    shooterId: shooterPlayer.id,
+    damage: damage,
+    health: targetPlayer.health,
+    maxHealth: targetPlayer.shipProperties.maxHealth
+  });
+  
+  // Check for destruction
+  if (targetPlayer.health <= 0) {
+    await handlePlayerDestroyed(targetPlayer, shooterPlayer);
+  }
+}
+
+async function handlePlayerDestroyed(targetPlayer, shooterPlayer) {
+  targetPlayer.isDead = true;
+  targetPlayer.health = 0;
+  targetPlayer.stats.deaths = (targetPlayer.stats.deaths || 0) + 1;
+  
+  // Award kill to shooter
+  if (shooterPlayer) {
+    shooterPlayer.stats.kills = (shooterPlayer.stats.kills || 0) + 1;
+    
+    // Award resources for kill
+    const killReward = 50 + (targetPlayer.level * 25);
+    shooterPlayer.resources += killReward;
+    
+    // Check combat achievements
+    const achievements = await checkCombatAchievements(shooterPlayer);
+    if (achievements.length > 0) {
+      const shooterWs = Array.from(activePlayers.entries()).find(([ws, p]) => p.id === shooterPlayer.id)?.[0];
+      if (shooterWs) {
+        shooterWs.send(JSON.stringify({ type: 'achievements', achievements }));
+      }
+    }
+    
+    // Update databases
+    await db.updatePlayerStats(shooterPlayer.id, {
+      kills: shooterPlayer.stats.kills,
+      resources: shooterPlayer.resources
+    });
+  }
+  
+  // Update target player database
+  await db.updatePlayerStats(targetPlayer.id, {
+    deaths: targetPlayer.stats.deaths
+  });
+  
+  // Update leaderboards
+  if (shooterPlayer) await updateLeaderboards(shooterPlayer);
+  await updateLeaderboards(targetPlayer);
+  
+  // Broadcast destruction
+  broadcast({
+    type: 'destroyed',
+    playerId: targetPlayer.id,
+    killerId: shooterPlayer?.id,
+    killerName: shooterPlayer?.username
+  });
+}
+
+async function checkCombatAchievements(player) {
+  const achievements = [];
+  const kills = player.stats.kills || 0;
+  
+  if (kills >= ACHIEVEMENTS.FIRST_BLOOD.threshold) {
+    if (await db.awardAchievement(player.id, 'kills', ACHIEVEMENTS.FIRST_BLOOD.name, ACHIEVEMENTS.FIRST_BLOOD.desc)) {
+      achievements.push(ACHIEVEMENTS.FIRST_BLOOD);
+    }
+  }
+  
+  if (kills >= ACHIEVEMENTS.WARRIOR.threshold) {
+    if (await db.awardAchievement(player.id, 'kills', ACHIEVEMENTS.WARRIOR.name, ACHIEVEMENTS.WARRIOR.desc)) {
+      achievements.push(ACHIEVEMENTS.WARRIOR);
+    }
+  }
+  
+  if (kills >= ACHIEVEMENTS.DESTROYER.threshold) {
+    if (await db.awardAchievement(player.id, 'kills', ACHIEVEMENTS.DESTROYER.name, ACHIEVEMENTS.DESTROYER.desc)) {
+      achievements.push(ACHIEVEMENTS.DESTROYER);
+    }
+  }
+  
+  if (kills >= ACHIEVEMENTS.ACE_PILOT.threshold) {
+    if (await db.awardAchievement(player.id, 'kills', ACHIEVEMENTS.ACE_PILOT.name, ACHIEVEMENTS.ACE_PILOT.desc)) {
+      achievements.push(ACHIEVEMENTS.ACE_PILOT);
+    }
+  }
+  
+  return achievements;
+}
+
+function handlePlayerRespawn(ws, player) {
+  if (!player.isDead) {
+    return;
+  }
+  
+  // Reset player state
+  player.isDead = false;
+  player.health = player.shipProperties?.maxHealth || 100;
+  player.invulnerableUntil = Date.now() + INVULNERABILITY_TIME;
+  
+  // Respawn at random location
+  player.x = Math.random() * 800 - 400;
+  player.y = Math.random() * 800 - 400;
+  
+  // Broadcast respawn
+  broadcast({
+    type: 'respawn',
+    playerId: player.id,
+    x: player.x,
+    y: player.y,
+    health: player.health,
+    maxHealth: player.shipProperties?.maxHealth || 100
+  });
+  
+  ws.send(JSON.stringify({
+    type: 'respawned',
+    health: player.health,
+    maxHealth: player.shipProperties?.maxHealth || 100,
+    invulnerableUntil: player.invulnerableUntil
+  }));
 }
 
 // WebSocket connection handling
@@ -634,6 +891,14 @@ wss.on('connection', async (ws) => {
         
         ws.send(JSON.stringify({ type: 'resources', resources: player.resources }));
       }
+      
+    } else if (data.type === 'fire') {
+      // Handle weapon firing
+      handleWeaponFire(ws, player, data);
+      
+    } else if (data.type === 'respawn') {
+      // Handle player respawn
+      handlePlayerRespawn(ws, player);
     }
   });
   
@@ -681,11 +946,26 @@ function startGameLoop() {
   const TICK_INTERVAL = 1000 / 30;
   
   setInterval(async () => {
+    // Process combat projectiles
+    await processProjectileHits();
+    
     // Update player positions
     activePlayers.forEach((p) => {
+      // Skip movement if dead
+      if (p.isDead) {
+        return;
+      }
+      
       // Update ship properties if they don't exist or components changed
       if (!p.shipProperties) {
         updateShipProperties(p);
+      }
+      
+      // Shield regeneration
+      const shieldRegen = p.shipProperties?.componentCounts?.shield ? 
+        p.shipProperties.componentCounts.shield * COMPONENT_EFFECTS.shield.regenBonus : 0;
+      if (shieldRegen > 0 && p.health < p.shipProperties.maxHealth) {
+        p.health = Math.min(p.shipProperties.maxHealth, (p.health || p.shipProperties.maxHealth) + (shieldRegen / 30));
       }
       
       const speed = p.shipProperties?.speed || BASE_SPEED;
@@ -706,6 +986,11 @@ function startGameLoop() {
     
     // Handle ore collection
     for (const [ws, p] of activePlayers.entries()) {
+      // Skip ore collection for dead players
+      if (p.isDead) {
+        continue;
+      }
+      
       const collectionRange = p.shipProperties?.collectionRange || BASE_COLLECTION_RANGE;
       const cargoCapacity = p.shipProperties?.cargoCapacity || BASE_CARGO_CAPACITY;
       const collectionEfficiency = p.shipProperties?.componentCounts?.cargo ? 

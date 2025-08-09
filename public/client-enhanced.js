@@ -22,6 +22,8 @@
   const closeShopBtn = document.getElementById('closeShop');
   const addEngineBtn = document.getElementById('addEngine');
   const addCargoBtn = document.getElementById('addCargo');
+  const addWeaponBtn = document.getElementById('addWeapon');
+  const addShieldBtn = document.getElementById('addShield');
   
   // Ship stats UI elements
   const shipSpeedEl = document.getElementById('shipSpeed');
@@ -44,6 +46,18 @@
     damage: 0,
     weaponRange: 0
   };
+  
+  // Combat state
+  let selectedTarget = null;
+  let weaponCooldown = 0;
+  let projectiles = [];
+  let damageNumbers = [];
+  let combatLog = [];
+  let lastFireTime = 0;
+  let mouseX = 0;
+  let mouseY = 0;
+  let worldMouseX = 0;
+  let worldMouseY = 0;
   
   // Camera and visual effects
   let zoom = 1;
@@ -144,14 +158,49 @@
     shopPanel.classList.add('hidden');
   });
 
-  // Keyboard shortcut for shop
+  // Keyboard shortcut for shop and combat controls
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Tab') {
       e.preventDefault();
-      shopPanel.classList.toggle('hidden');
-      if (!shopPanel.classList.contains('hidden')) {
-        renderShop();
+      if (e.shiftKey) {
+        // Shift+Tab for target cycling
+        cycleTarget();
+      } else {
+        // Tab for shop toggle
+        shopPanel.classList.toggle('hidden');
+        if (!shopPanel.classList.contains('hidden')) {
+          renderShop();
+        }
       }
+    } else if (e.code === 'Space') {
+      e.preventDefault();
+      fireWeapon();
+    }
+  });
+
+  // Mouse tracking for targeting
+  canvas.addEventListener('mousemove', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    mouseX = e.clientX - rect.left;
+    mouseY = e.clientY - rect.top;
+    updateWorldMousePosition();
+  });
+
+  // Click to target or fire
+  canvas.addEventListener('click', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    mouseX = e.clientX - rect.left;
+    mouseY = e.clientY - rect.top;
+    updateWorldMousePosition();
+    
+    // Check if clicking on an enemy ship
+    const target = getTargetAtPosition(worldMouseX, worldMouseY);
+    if (target && target.id !== myId) {
+      selectedTarget = target.id;
+      showNotification(`Targeting ${target.username || 'Player ' + target.id.substr(0, 6)}`, 'info', 1500);
+    } else if (selectedTarget && shipProperties.damage > 0) {
+      // Fire at selected target
+      fireWeapon();
     }
   });
 
@@ -242,6 +291,55 @@
       }
     } else if (msg.type === 'player_join') {
       showNotification(`${msg.player.username} joined the galaxy`, 'info', 2000);
+    } else if (msg.type === 'combat_hit') {
+      // Handle combat hit messages
+      const targetPlayer = players[msg.targetId];
+      if (targetPlayer) {
+        createDamageNumber(targetPlayer.x, targetPlayer.y - 20, msg.damage);
+        
+        // Create appropriate visual effect
+        if (msg.shieldHit) {
+          createShieldHitEffect(targetPlayer.x, targetPlayer.y);
+          playSound('shieldHit');
+        } else {
+          createImpactEffect(targetPlayer.x, targetPlayer.y);
+          playSound('hit');
+        }
+        
+        triggerShake(msg.targetId === myId ? 8 : 3, msg.targetId === myId ? 200 : 100);
+        
+        // Update target's health
+        if (targetPlayer.health !== undefined) {
+          targetPlayer.health = Math.max(0, targetPlayer.health - msg.damage);
+        }
+        
+        // Add to combat log
+        const attackerName = msg.attackerId === myId ? 'You' : (players[msg.attackerId]?.username || 'Player');
+        const targetName = msg.targetId === myId ? 'You' : (targetPlayer.username || 'Player');
+        addCombatLogEntry(`${attackerName} hit ${targetName} for ${msg.damage} damage`);
+        
+        // Low health warning for self
+        if (msg.targetId === myId && targetPlayer.health < shipProperties.maxHealth * 0.25) {
+          showNotification('LOW HEALTH WARNING!', 'error', 2000);
+          playSound('lowHealth');
+        }
+      }
+    } else if (msg.type === 'player_destroyed') {
+      // Handle player destruction
+      const destroyedPlayer = players[msg.playerId];
+      if (destroyedPlayer) {
+        createParticleExplosion(destroyedPlayer.x, destroyedPlayer.y, 30);
+        playSound('explosion');
+        triggerShake(15, 500);
+        
+        const destroyerName = msg.destroyerId === myId ? 'You' : (players[msg.destroyerId]?.username || 'Player');
+        const destroyedName = msg.playerId === myId ? 'You' : (destroyedPlayer.username || 'Player');
+        addCombatLogEntry(`${destroyerName} destroyed ${destroyedName}!`, 'kill');
+        
+        if (msg.playerId === selectedTarget) {
+          selectedTarget = null;
+        }
+      }
     }
   };
 
@@ -265,6 +363,12 @@
     
     // Update ship stats display
     updateShipStats();
+    
+    // Update button states
+    addEngineBtn.disabled = myResources < 50;
+    addCargoBtn.disabled = myResources < 30;
+    if (addWeaponBtn) addWeaponBtn.disabled = myResources < 70;
+    if (addShieldBtn) addShieldBtn.disabled = myResources < 60;
   }
   
   // Update ship statistics display
@@ -272,11 +376,65 @@
     if (shipSpeedEl) shipSpeedEl.textContent = shipProperties.speed.toFixed(1);
     if (shipCargoEl) shipCargoEl.textContent = `${Math.round((myResources / shipProperties.cargoCapacity) * 100)}%`;
     if (shipRangeEl) shipRangeEl.textContent = shipProperties.collectionRange;
-  }
     
-    // Update button states
-    addEngineBtn.disabled = myResources < 50;
-    addCargoBtn.disabled = myResources < 30;
+    // Update combat stats
+    const shipHealthEl = document.getElementById('shipHealth');
+    const shipDamageEl = document.getElementById('shipDamage');
+    const shipWeaponRangeEl = document.getElementById('shipWeaponRange');
+    
+    const self = players[myId];
+    if (self && self.health !== undefined) {
+      if (shipHealthEl) shipHealthEl.textContent = `${self.health}/${shipProperties.maxHealth}`;
+      
+      // Update health color based on percentage
+      if (shipHealthEl) {
+        const healthPercent = self.health / shipProperties.maxHealth;
+        if (healthPercent > 0.5) {
+          shipHealthEl.style.color = '#28a745';
+        } else if (healthPercent > 0.25) {
+          shipHealthEl.style.color = '#ffc107';
+        } else {
+          shipHealthEl.style.color = '#dc3545';
+        }
+      }
+    }
+    
+    if (shipDamageEl) shipDamageEl.textContent = shipProperties.damage;
+    if (shipWeaponRangeEl) shipWeaponRangeEl.textContent = shipProperties.weaponRange;
+    
+    // Update weapon cooldown indicator
+    updateWeaponCooldownDisplay();
+    
+    // Update target display
+    updateTargetDisplay();
+  }
+  
+  function updateWeaponCooldownDisplay() {
+    const cooldownBar = document.getElementById('weaponCooldownBar');
+    if (cooldownBar) {
+      const cooldownPercent = Math.max(0, weaponCooldown / 1000); // 1000ms cooldown
+      cooldownBar.style.width = `${(1 - cooldownPercent) * 100}%`;
+      
+      if (cooldownPercent > 0) {
+        cooldownBar.style.backgroundColor = '#dc3545'; // Red when on cooldown
+      } else {
+        cooldownBar.style.backgroundColor = '#28a745'; // Green when ready
+      }
+    }
+  }
+  
+  function updateTargetDisplay() {
+    const targetNameEl = document.getElementById('selectedTargetName');
+    if (targetNameEl) {
+      if (selectedTarget && players[selectedTarget]) {
+        const target = players[selectedTarget];
+        targetNameEl.textContent = target.username || `Player ${target.id.substr(0, 6)}`;
+        targetNameEl.style.color = '#ff4444';
+      } else {
+        targetNameEl.textContent = 'No Target';
+        targetNameEl.style.color = 'rgba(255, 255, 255, 0.6)';
+      }
+    }
   }
 
   function updatePlayerCount() {
@@ -319,7 +477,40 @@
         vx: Math.cos(angle) * speed,
         vy: Math.sin(angle) * speed,
         life: 1,
-        color: `hsl(${Math.random() * 60 + 10}, 100%, 60%)`
+        color: `hsl(${Math.random() * 60 + 10}, 100%, 60%)`,
+        type: 'explosion'
+      });
+    }
+  }
+
+  function createShieldHitEffect(x, y) {
+    for (let i = 0; i < 15; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 1 + Math.random() * 2;
+      particleEffects.push({
+        x: x + (Math.random() - 0.5) * 20,
+        y: y + (Math.random() - 0.5) * 20,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        life: 0.8,
+        color: `hsl(200, 100%, ${60 + Math.random() * 40}%)`,
+        type: 'shield'
+      });
+    }
+  }
+
+  function createImpactEffect(x, y) {
+    for (let i = 0; i < 8; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 0.5 + Math.random() * 1.5;
+      particleEffects.push({
+        x: x + (Math.random() - 0.5) * 10,
+        y: y + (Math.random() - 0.5) * 10,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        life: 0.6,
+        color: `hsl(0, 100%, ${70 + Math.random() * 30}%)`,
+        type: 'impact'
       });
     }
   }
@@ -339,10 +530,31 @@
     particleEffects.forEach(p => {
       ctx.save();
       ctx.globalAlpha = p.life;
-      ctx.fillStyle = p.color;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, 3 * p.life, 0, Math.PI * 2);
-      ctx.fill();
+      
+      if (p.type === 'shield') {
+        // Shield particles are larger and have a glow
+        ctx.fillStyle = p.color;
+        ctx.shadowColor = p.color;
+        ctx.shadowBlur = 8;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 4 * p.life, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (p.type === 'impact') {
+        // Impact particles are smaller and more intense
+        ctx.fillStyle = p.color;
+        ctx.shadowColor = p.color;
+        ctx.shadowBlur = 5;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 2 * p.life, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        // Default explosion particles
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 3 * p.life, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      
       ctx.restore();
     });
   }
@@ -396,6 +608,26 @@
     triggerShake(8, 250);
   });
 
+  addWeaponBtn.addEventListener('click', () => {
+    const self = players[myId];
+    if (!self || myResources < 70) return;
+    const offset = (self.modules.length) * 22;
+    const module = { id: 'weapon', x: offset, y: 0 };
+    ws.send(JSON.stringify({ type: 'build', module }));
+    showNotification('Weapon module added!', 'success');
+    triggerShake(10, 300);
+  });
+
+  addShieldBtn.addEventListener('click', () => {
+    const self = players[myId];
+    if (!self || myResources < 60) return;
+    const offset = (self.modules.length) * 22;
+    const module = { id: 'shield', x: offset, y: 0 };
+    ws.send(JSON.stringify({ type: 'build', module }));
+    showNotification('Shield module added!', 'success');
+    triggerShake(8, 250);
+  });
+
   // Screen shake
   function triggerShake(magnitude, duration) {
     shakeMagnitude = magnitude;
@@ -413,6 +645,314 @@
       };
     }
     return { x: 0, y: 0 };
+  }
+
+  // Combat system functions
+  function updateWorldMousePosition() {
+    const self = players[myId];
+    if (!self) return;
+    
+    const screenCenterX = canvas.width / 2;
+    const screenCenterY = canvas.height / 2;
+    
+    worldMouseX = self.x + (mouseX - screenCenterX) / zoom;
+    worldMouseY = self.y + (mouseY - screenCenterY) / zoom;
+  }
+
+  function getTargetAtPosition(x, y) {
+    const clickRadius = 30 / zoom; // Adjust for zoom level
+    
+    for (const player of Object.values(players)) {
+      if (player.id === myId) continue;
+      
+      const dx = player.x - x;
+      const dy = player.y - y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      
+      if (distance <= clickRadius) {
+        return player;
+      }
+    }
+    return null;
+  }
+
+  function cycleTarget() {
+    const otherPlayers = Object.values(players).filter(p => p.id !== myId);
+    if (otherPlayers.length === 0) {
+      selectedTarget = null;
+      return;
+    }
+    
+    if (!selectedTarget) {
+      selectedTarget = otherPlayers[0].id;
+    } else {
+      const currentIndex = otherPlayers.findIndex(p => p.id === selectedTarget);
+      const nextIndex = (currentIndex + 1) % otherPlayers.length;
+      selectedTarget = otherPlayers[nextIndex].id;
+    }
+    
+    const target = players[selectedTarget];
+    if (target) {
+      showNotification(`Targeting ${target.username || 'Player ' + target.id.substr(0, 6)}`, 'info', 1500);
+    }
+  }
+
+  function fireWeapon() {
+    const now = performance.now();
+    const cooldownTime = 1000; // 1 second cooldown
+    
+    if (now - lastFireTime < cooldownTime) {
+      return; // Still on cooldown
+    }
+    
+    const self = players[myId];
+    const target = players[selectedTarget];
+    
+    if (!self || !target || shipProperties.damage <= 0) {
+      return;
+    }
+    
+    // Check if target is in range
+    const dx = target.x - self.x;
+    const dy = target.y - self.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    
+    if (distance > shipProperties.weaponRange) {
+      showNotification('Target out of range!', 'warning', 1500);
+      return;
+    }
+    
+    lastFireTime = now;
+    weaponCooldown = cooldownTime;
+    
+    // Create projectile
+    createProjectile(self.x, self.y, target.x, target.y, shipProperties.damage);
+    
+    // Send fire command to server
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({
+        type: 'fire',
+        targetId: selectedTarget,
+        damage: shipProperties.damage
+      }));
+    }
+    
+    // Visual and audio feedback
+    triggerShake(5, 150);
+    playSound('weaponFire');
+  }
+
+  function createProjectile(startX, startY, targetX, targetY, damage) {
+    const dx = targetX - startX;
+    const dy = targetY - startY;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    const speed = 8; // pixels per frame
+    
+    projectiles.push({
+      x: startX,
+      y: startY,
+      vx: (dx / distance) * speed,
+      vy: (dy / distance) * speed,
+      damage: damage,
+      life: distance / speed, // Time to reach target
+      maxLife: distance / speed,
+      color: '#00ffff',
+      type: 'laser'
+    });
+  }
+
+  function updateProjectiles() {
+    projectiles = projectiles.filter(p => {
+      p.x += p.vx;
+      p.y += p.vy;
+      p.life -= 1;
+      return p.life > 0;
+    });
+  }
+
+  function drawProjectiles() {
+    projectiles.forEach(p => {
+      ctx.save();
+      const alpha = p.life / p.maxLife;
+      ctx.globalAlpha = alpha;
+      
+      if (p.type === 'laser') {
+        // Draw laser beam
+        ctx.strokeStyle = p.color;
+        ctx.lineWidth = 3;
+        ctx.shadowColor = p.color;
+        ctx.shadowBlur = 10;
+        
+        ctx.beginPath();
+        ctx.moveTo(p.x - p.vx * 5, p.y - p.vy * 5);
+        ctx.lineTo(p.x, p.y);
+        ctx.stroke();
+      }
+      
+      ctx.restore();
+    });
+  }
+
+  function createDamageNumber(x, y, damage) {
+    damageNumbers.push({
+      x: x,
+      y: y,
+      damage: damage,
+      life: 60, // frames
+      maxLife: 60,
+      vy: -2 // float upward
+    });
+  }
+
+  function updateDamageNumbers() {
+    damageNumbers = damageNumbers.filter(d => {
+      d.y += d.vy;
+      d.vy *= 0.98; // slow down over time
+      d.life -= 1;
+      return d.life > 0;
+    });
+  }
+
+  function drawDamageNumbers() {
+    damageNumbers.forEach(d => {
+      ctx.save();
+      const alpha = d.life / d.maxLife;
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = '#ff4444';
+      ctx.font = 'bold 16px Arial';
+      ctx.textAlign = 'center';
+      ctx.strokeStyle = '#000';
+      ctx.lineWidth = 2;
+      ctx.strokeText(`-${d.damage}`, d.x, d.y);
+      ctx.fillText(`-${d.damage}`, d.x, d.y);
+      ctx.restore();
+    });
+  }
+
+  function updateCooldowns() {
+    if (weaponCooldown > 0) {
+      weaponCooldown -= 16; // Reduce by frame time (assuming 60fps)
+      if (weaponCooldown < 0) weaponCooldown = 0;
+    }
+  }
+
+  // Audio system
+  const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+  const audioBuffers = {};
+  
+  function generateSound(type) {
+    const sampleRate = audioContext.sampleRate;
+    let buffer, data, length;
+    
+    switch(type) {
+      case 'weaponFire':
+        length = sampleRate * 0.2; // 0.2 seconds
+        buffer = audioContext.createBuffer(1, length, sampleRate);
+        data = buffer.getChannelData(0);
+        for (let i = 0; i < length; i++) {
+          const t = i / sampleRate;
+          data[i] = Math.sin(2 * Math.PI * (800 + t * 400) * t) * Math.exp(-t * 8) * 0.3;
+        }
+        break;
+        
+      case 'hit':
+        length = sampleRate * 0.15;
+        buffer = audioContext.createBuffer(1, length, sampleRate);
+        data = buffer.getChannelData(0);
+        for (let i = 0; i < length; i++) {
+          const t = i / sampleRate;
+          data[i] = (Math.random() * 2 - 1) * Math.exp(-t * 12) * 0.2;
+        }
+        break;
+        
+      case 'shieldHit':
+        length = sampleRate * 0.3;
+        buffer = audioContext.createBuffer(1, length, sampleRate);
+        data = buffer.getChannelData(0);
+        for (let i = 0; i < length; i++) {
+          const t = i / sampleRate;
+          data[i] = Math.sin(2 * Math.PI * 300 * t) * Math.exp(-t * 3) * 0.2;
+        }
+        break;
+        
+      case 'explosion':
+        length = sampleRate * 0.8;
+        buffer = audioContext.createBuffer(1, length, sampleRate);
+        data = buffer.getChannelData(0);
+        for (let i = 0; i < length; i++) {
+          const t = i / sampleRate;
+          data[i] = (Math.random() * 2 - 1) * Math.exp(-t * 2) * 0.4;
+        }
+        break;
+        
+      case 'lowHealth':
+        length = sampleRate * 0.5;
+        buffer = audioContext.createBuffer(1, length, sampleRate);
+        data = buffer.getChannelData(0);
+        for (let i = 0; i < length; i++) {
+          const t = i / sampleRate;
+          data[i] = Math.sin(2 * Math.PI * 200 * t) * Math.sin(2 * Math.PI * 8 * t) * Math.exp(-t * 4) * 0.3;
+        }
+        break;
+        
+      default:
+        return null;
+    }
+    
+    return buffer;
+  }
+
+  function playSound(type) {
+    try {
+      if (audioContext.state === 'suspended') {
+        audioContext.resume();
+      }
+      
+      if (!audioBuffers[type]) {
+        audioBuffers[type] = generateSound(type);
+      }
+      
+      if (audioBuffers[type]) {
+        const source = audioContext.createBufferSource();
+        source.buffer = audioBuffers[type];
+        source.connect(audioContext.destination);
+        source.start();
+      }
+    } catch (error) {
+      // Silently fail if audio context is not available
+    }
+  }
+
+  // Combat log system
+  function addCombatLogEntry(message, type = 'normal') {
+    combatLog.push({
+      message,
+      type,
+      timestamp: Date.now()
+    });
+    
+    // Keep only last 10 entries
+    if (combatLog.length > 10) {
+      combatLog.shift();
+    }
+    
+    updateCombatLogDisplay();
+  }
+
+  function updateCombatLogDisplay() {
+    const combatLogEl = document.getElementById('combatLog');
+    if (!combatLogEl) return;
+    
+    combatLogEl.innerHTML = '';
+    combatLog.slice(-5).forEach(entry => {
+      const logEntry = document.createElement('div');
+      logEntry.className = `combat-log-entry ${entry.type}`;
+      logEntry.textContent = entry.message;
+      combatLogEl.appendChild(logEntry);
+    });
+    
+    // Auto-scroll to bottom
+    combatLogEl.scrollTop = combatLogEl.scrollHeight;
   }
 
   // Zoom controls
@@ -584,6 +1124,9 @@
     requestAnimationFrame(render);
     updateZoom();
     updateParticles();
+    updateProjectiles();
+    updateDamageNumbers();
+    updateCooldowns();
     
     const shakeOffset = applyShake();
     
@@ -631,6 +1174,9 @@
     
     // Draw particles
     drawParticles(camX, camY);
+    
+    // Draw projectiles
+    drawProjectiles();
     
     // Draw ores with glow effect
     ores.forEach(ore => {
@@ -743,14 +1289,71 @@
         ctx.stroke();
       });
       
+      // Draw health bar
+      if (p.health !== undefined && p.shipProperties && p.shipProperties.maxHealth) {
+        const healthPercent = p.health / p.shipProperties.maxHealth;
+        const barWidth = 40;
+        const barHeight = 6;
+        const barX = p.x - barWidth / 2;
+        const barY = p.y - 50;
+        
+        // Background
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+        ctx.fillRect(barX - 1, barY - 1, barWidth + 2, barHeight + 2);
+        
+        // Health bar
+        ctx.fillStyle = healthPercent > 0.5 ? '#28a745' : healthPercent > 0.25 ? '#ffc107' : '#dc3545';
+        ctx.fillRect(barX, barY, barWidth * healthPercent, barHeight);
+        
+        // Health bar border
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(barX, barY, barWidth, barHeight);
+        
+        // Health text
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+        ctx.font = '10px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(`${p.health}/${p.shipProperties.maxHealth}`, p.x, barY - 2);
+      }
+      
+      // Draw targeting indicator
+      if (selectedTarget === p.id) {
+        ctx.save();
+        ctx.strokeStyle = '#ff0000';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([5, 5]);
+        const time = performance.now() * 0.005;
+        ctx.lineDashOffset = time % 10;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 35, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+      
+      // Draw weapon range indicator for self
+      if (isMe && selectedTarget && shipProperties.weaponRange > 0) {
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255, 255, 0, 0.3)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([3, 3]);
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, shipProperties.weaponRange, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+      
       // Draw player name
       ctx.save();
       ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
       ctx.font = '12px Arial';
       ctx.textAlign = 'center';
-      ctx.fillText(isMe ? 'You' : `Player ${p.id.substr(0, 6)}`, p.x, p.y - 30);
+      ctx.fillText(isMe ? 'You' : `Player ${p.id.substr(0, 6)}`, p.x, p.y - 65);
       ctx.restore();
     });
+    
+    // Draw damage numbers
+    drawDamageNumbers();
     
     ctx.restore();
     
