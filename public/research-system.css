@@ -1,0 +1,594 @@
+/**
+ * Research System CSS
+ * Styles for the Research & Technology interface
+ */
+
+.research-interface {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 90vw;
+  max-width: 1200px;
+  height: 80vh;
+  max-height: 800px;
+  background: linear-gradient(135deg, #0a1931, #1a2b4a);
+  border: 2px solid rgba(100, 200, 255, 0.3);
+  border-radius: 15px;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+  color: white;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.research-interface.hidden {
+  display: none;
+}
+
+/* Header */
+.research-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 30px;
+  background: linear-gradient(135deg, rgba(0, 212, 255, 0.1), rgba(0, 150, 255, 0.05));
+  border-bottom: 1px solid rgba(100, 200, 255, 0.2);
+}
+
+.research-header h2 {
+  margin: 0;
+  color: #00d4ff;
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.research-points-display {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+}
+
+.research-point-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  padding: 8px 12px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.point-icon {
+  font-size: 18px;
+  width: 24px;
+  text-align: center;
+}
+
+.point-icon.military { color: #ff4757; }
+.point-icon.engineering { color: #3742fa; }
+.point-icon.science { color: #2ed573; }
+.point-icon.commerce { color: #ffa502; }
+
+.research-point-group span:last-child {
+  font-weight: bold;
+  font-size: 16px;
+  min-width: 30px;
+  text-align: right;
+}
+
+.close-btn {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: white;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  font-size: 20px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.close-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.5);
+  transform: scale(1.1);
+}
+
+/* Tabs */
+.research-tabs {
+  display: flex;
+  background: rgba(0, 0, 0, 0.2);
+  border-bottom: 1px solid rgba(100, 200, 255, 0.2);
+}
+
+.tab-btn {
+  flex: 1;
+  padding: 15px 20px;
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.7);
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-size: 14px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.tab-btn:hover {
+  color: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.tab-btn.active {
+  color: #00d4ff;
+  background: rgba(0, 212, 255, 0.1);
+  border-bottom: 2px solid #00d4ff;
+}
+
+/* Content Area */
+.research-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0;
+}
+
+.tab-content {
+  display: none;
+  height: 100%;
+  overflow-y: auto;
+}
+
+.tab-content.active {
+  display: block;
+}
+
+/* Tree Selector */
+.tree-selector {
+  display: flex;
+  padding: 20px 30px;
+  gap: 10px;
+  background: rgba(0, 0, 0, 0.2);
+  border-bottom: 1px solid rgba(100, 200, 255, 0.1);
+}
+
+.tree-btn {
+  padding: 10px 20px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.8);
+  border-radius: 25px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.tree-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: white;
+  transform: translateY(-1px);
+}
+
+.tree-btn.active {
+  background: linear-gradient(135deg, #00d4ff, #0099cc);
+  border-color: #00d4ff;
+  color: white;
+  box-shadow: 0 4px 12px rgba(0, 212, 255, 0.3);
+}
+
+/* Tech Tree Display */
+.tech-tree-container {
+  flex: 1;
+  padding: 30px;
+  overflow: auto;
+}
+
+.tech-tree-display {
+  min-height: 400px;
+}
+
+.tech-tree-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 40px;
+}
+
+.tech-tier {
+  position: relative;
+}
+
+.tier-label {
+  font-size: 18px;
+  font-weight: bold;
+  color: #00d4ff;
+  margin-bottom: 20px;
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+}
+
+.tech-row {
+  display: flex;
+  justify-content: center;
+  gap: 30px;
+  flex-wrap: wrap;
+}
+
+.tech-node {
+  width: 200px;
+  padding: 20px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.05));
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-radius: 15px;
+  text-align: center;
+  transition: all 0.3s ease;
+  cursor: pointer;
+  position: relative;
+}
+
+.tech-node:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+}
+
+.tech-node.unlocked {
+  border-color: #2ed573;
+  background: linear-gradient(135deg, rgba(46, 213, 115, 0.2), rgba(46, 213, 115, 0.1));
+}
+
+.tech-node.researching {
+  border-color: #ffa502;
+  background: linear-gradient(135deg, rgba(255, 165, 2, 0.2), rgba(255, 165, 2, 0.1));
+  animation: pulse 2s infinite;
+}
+
+.tech-node.locked {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: linear-gradient(135deg, rgba(0, 0, 0, 0.3), rgba(0, 0, 0, 0.1));
+  opacity: 0.6;
+}
+
+.tech-icon {
+  font-size: 32px;
+  margin-bottom: 10px;
+}
+
+.tech-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: white;
+  margin-bottom: 15px;
+  line-height: 1.3;
+}
+
+.tech-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+/* Buttons */
+.research-btn {
+  background: linear-gradient(135deg, #00d4ff, #0099cc);
+  border: none;
+  color: white;
+  padding: 10px 20px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 14px;
+  transition: all 0.2s ease;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.research-btn:hover {
+  background: linear-gradient(135deg, #33e0ff, #00d4ff);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 212, 255, 0.3);
+}
+
+.research-btn.small {
+  padding: 6px 12px;
+  font-size: 12px;
+}
+
+.research-btn.secondary {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.1));
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.research-btn.secondary:hover {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0.2));
+}
+
+.research-btn.danger {
+  background: linear-gradient(135deg, #ff4757, #ff3742);
+}
+
+.research-btn.danger:hover {
+  background: linear-gradient(135deg, #ff6b7a, #ff4757);
+}
+
+.info-btn {
+  background: linear-gradient(135deg, #3742fa, #2f3542);
+  border: none;
+  color: white;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.2s ease;
+}
+
+.info-btn:hover {
+  background: linear-gradient(135deg, #5352ed, #3742fa);
+}
+
+/* Project Cards */
+.projects-list, .laboratory-section, .discoveries-section {
+  padding: 30px;
+}
+
+.projects-list h3, .laboratory-section h3, .discoveries-section h3 {
+  color: #00d4ff;
+  font-size: 20px;
+  margin-bottom: 20px;
+  text-align: center;
+}
+
+.project-card, .laboratory-card, .discovery-card {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  padding: 20px;
+  margin-bottom: 15px;
+  transition: all 0.2s ease;
+}
+
+.project-card:hover, .laboratory-card:hover, .discovery-card:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.2);
+  transform: translateY(-2px);
+}
+
+.project-header, .lab-header, .discovery-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+}
+
+.project-header h4, .lab-header h4, .discovery-info h4 {
+  margin: 0;
+  color: white;
+  font-size: 18px;
+}
+
+.project-type, .lab-type {
+  background: rgba(0, 212, 255, 0.2);
+  color: #00d4ff;
+  padding: 4px 12px;
+  border-radius: 15px;
+  font-size: 12px;
+  text-transform: uppercase;
+  font-weight: bold;
+}
+
+.project-type.guild_collaboration {
+  background: rgba(255, 165, 2, 0.2);
+  color: #ffa502;
+}
+
+.lab-type.advanced {
+  background: rgba(46, 213, 115, 0.2);
+  color: #2ed573;
+}
+
+.lab-type.quantum {
+  background: rgba(116, 125, 140, 0.2);
+  color: #747d8c;
+}
+
+/* Progress Bar */
+.project-progress {
+  margin-bottom: 15px;
+}
+
+.progress-bar {
+  width: 100%;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #00d4ff, #2ed573);
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.progress-text {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+/* Stats and Info */
+.lab-stats, .project-info, .discovery-details {
+  margin-bottom: 15px;
+}
+
+.stat-row, .detail-row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.stat-label, .detail-label {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 14px;
+}
+
+.stat-value, .detail-value {
+  color: white;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.detail-value.analyzed {
+  color: #2ed573;
+}
+
+.detail-value.unanalyzed {
+  color: #ffa502;
+}
+
+/* Actions */
+.project-actions, .lab-actions, .discovery-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.laboratory-actions, .project-actions {
+  display: flex;
+  gap: 15px;
+  justify-content: center;
+  margin-top: 30px;
+}
+
+/* Discovery Specific */
+.discovery-header {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  margin-bottom: 15px;
+}
+
+.discovery-icon {
+  font-size: 32px;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 212, 255, 0.1);
+  border-radius: 50%;
+}
+
+.discovery-type {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+/* Empty States */
+.no-projects, .no-laboratories, .no-discoveries {
+  text-align: center;
+  color: rgba(255, 255, 255, 0.5);
+  font-style: italic;
+  padding: 40px;
+  font-size: 16px;
+}
+
+/* Time Display */
+.time-remaining {
+  color: #ffa502;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .research-interface {
+    width: 95vw;
+    height: 90vh;
+  }
+  
+  .research-header {
+    flex-direction: column;
+    gap: 15px;
+    text-align: center;
+  }
+  
+  .research-points-display {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  
+  .tree-selector {
+    flex-wrap: wrap;
+  }
+  
+  .tech-row {
+    gap: 15px;
+  }
+  
+  .tech-node {
+    width: 160px;
+    padding: 15px;
+  }
+  
+  .project-header, .lab-header {
+    flex-direction: column;
+    gap: 10px;
+    text-align: center;
+  }
+  
+  .project-actions, .lab-actions, .discovery-actions {
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+}
+
+/* Animations */
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -60%);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%);
+  }
+}
+
+.research-interface:not(.hidden) {
+  animation: slideIn 0.3s ease-out;
+}
+
+/* Scrollbar Styling */
+.research-content::-webkit-scrollbar,
+.tech-tree-container::-webkit-scrollbar {
+  width: 8px;
+}
+
+.research-content::-webkit-scrollbar-track,
+.tech-tree-container::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.research-content::-webkit-scrollbar-thumb,
+.tech-tree-container::-webkit-scrollbar-thumb {
+  background: rgba(0, 212, 255, 0.3);
+  border-radius: 4px;
+}
+
+.research-content::-webkit-scrollbar-thumb:hover,
+.tech-tree-container::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 212, 255, 0.5);
+}

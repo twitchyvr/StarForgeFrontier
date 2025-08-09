@@ -873,6 +873,167 @@ class Database {
         most_dangerous_hazard TEXT,
         longest_exposure_time INTEGER DEFAULT 0,
         FOREIGN KEY (player_id) REFERENCES players (id)
+      )`,
+
+      // ===== RESEARCH & TECHNOLOGY SYSTEM TABLES =====
+
+      // Research trees and technology definitions
+      `CREATE TABLE IF NOT EXISTS research_technologies (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT NOT NULL,
+        tree TEXT NOT NULL, -- 'MILITARY', 'ENGINEERING', 'SCIENCE', 'COMMERCE'
+        tier INTEGER NOT NULL,
+        research_cost INTEGER NOT NULL,
+        research_time INTEGER NOT NULL, -- Time in milliseconds
+        prerequisites TEXT NOT NULL, -- JSON array of prerequisite technology IDs
+        unlocks TEXT NOT NULL, -- JSON array of unlocked items/abilities
+        effects TEXT NOT NULL, -- JSON object for gameplay effects
+        blueprints TEXT NOT NULL, -- JSON array of unlocked blueprints
+        is_active BOOLEAN DEFAULT 1,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )`,
+
+      // Player research progress and unlocks
+      `CREATE TABLE IF NOT EXISTS player_research (
+        player_id TEXT NOT NULL,
+        technology_id TEXT NOT NULL,
+        research_progress REAL DEFAULT 0.0, -- 0.0 to 1.0
+        research_points_invested INTEGER DEFAULT 0,
+        is_unlocked BOOLEAN DEFAULT 0,
+        unlocked_at INTEGER, -- Timestamp when unlocked
+        research_level INTEGER DEFAULT 0, -- For technologies with multiple levels
+        PRIMARY KEY (player_id, technology_id),
+        FOREIGN KEY (player_id) REFERENCES players (id)
+      )`,
+
+      // Active research projects
+      `CREATE TABLE IF NOT EXISTS research_projects (
+        id TEXT PRIMARY KEY,
+        player_id TEXT,
+        guild_id TEXT,
+        technology_id TEXT NOT NULL,
+        project_type TEXT NOT NULL, -- 'INDIVIDUAL', 'GUILD_COLLABORATION'
+        research_points_allocated INTEGER NOT NULL,
+        start_time INTEGER NOT NULL, -- Timestamp when project started
+        estimated_completion INTEGER NOT NULL, -- Estimated completion timestamp
+        actual_completion INTEGER, -- Actual completion timestamp
+        status TEXT DEFAULT 'ACTIVE', -- 'ACTIVE', 'PAUSED', 'COMPLETED', 'CANCELLED'
+        contributors TEXT, -- JSON array of contributor player IDs for guild projects
+        bonus_factors TEXT, -- JSON object for various research bonuses
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (player_id) REFERENCES players (id),
+        FOREIGN KEY (guild_id) REFERENCES guilds (id)
+      )`,
+
+      // Player research points and generation rates
+      `CREATE TABLE IF NOT EXISTS player_research_points (
+        player_id TEXT PRIMARY KEY,
+        military_points INTEGER DEFAULT 0,
+        engineering_points INTEGER DEFAULT 0,
+        science_points INTEGER DEFAULT 0,
+        commerce_points INTEGER DEFAULT 0,
+        total_points_earned INTEGER DEFAULT 0,
+        total_points_spent INTEGER DEFAULT 0,
+        last_updated DATETIME DEFAULT CURRENT_TIMESTAMP,
+        generation_rate TEXT, -- JSON object with generation rates by source
+        FOREIGN KEY (player_id) REFERENCES players (id)
+      )`,
+
+      // Technology blueprints and unlocked crafting options
+      `CREATE TABLE IF NOT EXISTS technology_blueprints (
+        id TEXT PRIMARY KEY,
+        technology_id TEXT NOT NULL,
+        blueprint_type TEXT NOT NULL, -- 'weapon', 'defense', 'propulsion', 'utility', 'facility'
+        name TEXT NOT NULL,
+        description TEXT,
+        stats TEXT NOT NULL, -- JSON object
+        crafting_requirements TEXT, -- JSON object
+        unlock_level INTEGER DEFAULT 1,
+        rarity TEXT DEFAULT 'COMMON', -- 'COMMON', 'UNCOMMON', 'RARE', 'EPIC', 'LEGENDARY'
+        is_active BOOLEAN DEFAULT 1,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )`,
+
+      // Research laboratories and facilities
+      `CREATE TABLE IF NOT EXISTS research_laboratories (
+        id TEXT PRIMARY KEY,
+        player_id TEXT,
+        guild_id TEXT,
+        sector_x INTEGER NOT NULL,
+        sector_y INTEGER NOT NULL,
+        x REAL NOT NULL,
+        y REAL NOT NULL,
+        name TEXT NOT NULL,
+        laboratory_type TEXT DEFAULT 'BASIC', -- 'BASIC', 'ADVANCED', 'QUANTUM', 'DIMENSIONAL'
+        level INTEGER DEFAULT 1,
+        specializations TEXT, -- JSON array of research tree specializations
+        research_bonus REAL DEFAULT 1.0, -- Multiplier for research speed
+        capacity INTEGER DEFAULT 1, -- Number of simultaneous projects
+        power_consumption INTEGER DEFAULT 100,
+        maintenance_cost INTEGER DEFAULT 50,
+        is_active BOOLEAN DEFAULT 1,
+        construction_progress REAL DEFAULT 1.0, -- 0.0 to 1.0
+        last_maintenance INTEGER DEFAULT (strftime('%s', 'now') * 1000),
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (player_id) REFERENCES players (id),
+        FOREIGN KEY (guild_id) REFERENCES guilds (id)
+      )`,
+
+      // Research collaboration and guild projects
+      `CREATE TABLE IF NOT EXISTS research_collaborations (
+        id TEXT PRIMARY KEY,
+        guild_id TEXT NOT NULL,
+        technology_id TEXT NOT NULL,
+        project_name TEXT NOT NULL,
+        description TEXT,
+        required_points INTEGER NOT NULL,
+        contributed_points INTEGER DEFAULT 0,
+        contributors TEXT, -- JSON object mapping player_id to contribution amount
+        rewards TEXT, -- JSON object defining rewards for contributors
+        status TEXT DEFAULT 'OPEN', -- 'OPEN', 'IN_PROGRESS', 'COMPLETED', 'FAILED'
+        start_time INTEGER, -- Timestamp when project starts
+        completion_time INTEGER, -- Timestamp when completed
+        created_by TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (guild_id) REFERENCES guilds (id),
+        FOREIGN KEY (created_by) REFERENCES players (id)
+      )`,
+
+      // Research events and history
+      `CREATE TABLE IF NOT EXISTS research_events (
+        id TEXT PRIMARY KEY,
+        player_id TEXT,
+        guild_id TEXT,
+        event_type TEXT NOT NULL, -- 'RESEARCH_COMPLETED', 'COLLABORATION_JOINED', 'BREAKTHROUGH', 'FAILURE', 'POINTS_AWARDED'
+        technology_id TEXT,
+        event_data TEXT, -- JSON object with event-specific data
+        research_points_awarded INTEGER DEFAULT 0,
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (player_id) REFERENCES players (id),
+        FOREIGN KEY (guild_id) REFERENCES guilds (id)
+      )`,
+
+      // Research station discoveries and alien technology
+      `CREATE TABLE IF NOT EXISTS research_discoveries (
+        id TEXT PRIMARY KEY,
+        discovered_by TEXT NOT NULL, -- Player ID who made the discovery
+        discovery_type TEXT NOT NULL, -- 'ALIEN_TECH', 'ANCIENT_RUIN', 'PROTOTYPE', 'BREAKTHROUGH'
+        sector_x INTEGER NOT NULL,
+        sector_y INTEGER NOT NULL,
+        x REAL NOT NULL,
+        y REAL NOT NULL,
+        discovery_data TEXT, -- JSON object with discovery-specific information
+        research_value INTEGER DEFAULT 0, -- Research points awarded
+        technology_unlocked TEXT, -- Technology ID unlocked by this discovery
+        shared_with_guild BOOLEAN DEFAULT 0,
+        discovery_time INTEGER NOT NULL,
+        analyzed BOOLEAN DEFAULT 0,
+        analysis_results TEXT, -- JSON object with analysis data
+        FOREIGN KEY (discovered_by) REFERENCES players (id)
       )`
     ];
 

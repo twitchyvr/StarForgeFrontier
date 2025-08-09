@@ -54,6 +54,12 @@ let skillSystem = null;
 // Initialize guild system
 let guildSystem = null;
 
+// Initialize research system
+const ResearchSystem = require('./research/ResearchSystem');
+const ResearchStation = require('./research/ResearchStation');
+let researchSystem = null;
+let researchStation = null;
+
 // In-memory state for active gameplay
 const activePlayers = new Map(); // WebSocket connections
 const playerSessions = new Map(); // Game session tracking
@@ -256,6 +262,12 @@ async function initializeServer() {
     guildSystem = new GuildSystem(db, skillSystem, factionOrchestrator);
     await guildSystem.initialize();
     console.log('Guild system initialized successfully');
+    
+    // Initialize research system
+    researchSystem = new ResearchSystem(db, skillSystem, guildSystem);
+    await researchSystem.initialize();
+    researchStation = new ResearchStation(db, sectorManager);
+    console.log('Research system initialized successfully');
     
     // Initialize starting trading stations
     await initializeStartingTradingStations();
@@ -2430,6 +2442,147 @@ wss.on('connection', async (ws) => {
           error: error.message
         }));
       }
+      
+    // ===== RESEARCH SYSTEM ENDPOINTS =====
+    } else if (data.type === 'getResearchData') {
+      try {
+        const researchProgress = await researchSystem.getPlayerResearchProgress(player.id);
+        const researchPoints = await researchSystem.getPlayerResearchPoints(player.id);
+        const laboratories = await researchStation.getPlayerLaboratories(player.id);
+        
+        const callback = data.callback;
+        ws.send(JSON.stringify({
+          type: 'callback',
+          callbackId: callback,
+          success: true,
+          data: {
+            researchProgress,
+            researchPoints,
+            laboratories
+          }
+        }));
+      } catch (error) {
+        console.error('Error getting research data:', error);
+        const callback = data.callback;
+        ws.send(JSON.stringify({
+          type: 'callback',
+          callbackId: callback,
+          success: false,
+          message: error.message
+        }));
+      }
+      
+    } else if (data.type === 'startResearch') {
+      try {
+        const projectId = await researchSystem.startResearchProject(
+          player.id, 
+          data.technologyId, 
+          data.projectType || 'INDIVIDUAL',
+          data.guildId || null
+        );
+        
+        const callback = data.callback;
+        ws.send(JSON.stringify({
+          type: 'callback',
+          callbackId: callback,
+          success: true,
+          data: { projectId }
+        }));
+        
+        // Broadcast research started event
+        broadcast({
+          type: 'researchStarted',
+          playerId: player.id,
+          technologyId: data.technologyId,
+          projectId
+        });
+        
+      } catch (error) {
+        console.error('Error starting research:', error);
+        const callback = data.callback;
+        ws.send(JSON.stringify({
+          type: 'callback',
+          callbackId: callback,
+          success: false,
+          message: error.message
+        }));
+      }
+      
+    } else if (data.type === 'buildLaboratory') {
+      try {
+        const result = await researchStation.buildLaboratory(
+          player.id,
+          data.sectorX,
+          data.sectorY,
+          data.x,
+          data.y,
+          data.laboratoryType,
+          data.name,
+          data.guildId || null
+        );
+        
+        const callback = data.callback;
+        ws.send(JSON.stringify({
+          type: 'callback',
+          callbackId: callback,
+          success: true,
+          data: result
+        }));
+        
+      } catch (error) {
+        console.error('Error building laboratory:', error);
+        const callback = data.callback;
+        ws.send(JSON.stringify({
+          type: 'callback',
+          callbackId: callback,
+          success: false,
+          message: error.message
+        }));
+      }
+      
+    } else if (data.type === 'upgradeLaboratory') {
+      try {
+        await researchStation.upgradeLaboratory(player.id, data.labId, data.upgradeType);
+        
+        const callback = data.callback;
+        ws.send(JSON.stringify({
+          type: 'callback',
+          callbackId: callback,
+          success: true
+        }));
+        
+      } catch (error) {
+        console.error('Error upgrading laboratory:', error);
+        const callback = data.callback;
+        ws.send(JSON.stringify({
+          type: 'callback',
+          callbackId: callback,
+          success: false,
+          message: error.message
+        }));
+      }
+      
+    } else if (data.type === 'performMaintenance') {
+      try {
+        await researchStation.performMaintenance(player.id, data.labId);
+        
+        const callback = data.callback;
+        ws.send(JSON.stringify({
+          type: 'callback',
+          callbackId: callback,
+          success: true
+        }));
+        
+      } catch (error) {
+        console.error('Error performing maintenance:', error);
+        const callback = data.callback;
+        ws.send(JSON.stringify({
+          type: 'callback',
+          callbackId: callback,
+          success: false,
+          message: error.message
+        }));
+      }
     }
   });
   
@@ -2735,6 +2888,15 @@ function startGameLoop() {
         if (player) {
           const result = await warpSystem.completeWarp(playerId, warpOp, player);
           if (result.success) {
+            // Award research points for exploration
+            if (researchSystem) {
+              await researchSystem.generateResearchPointsFromActivity(playerId, 'EXPLORATION', { 
+                fromSector: { x: warpOp.fromSectorX, y: warpOp.fromSectorY },
+                toSector: { x: warpOp.toSectorX, y: warpOp.toSectorY },
+                distance: Math.abs(warpOp.toSectorX - warpOp.fromSectorX) + Math.abs(warpOp.toSectorY - warpOp.fromSectorY)
+              });
+            }
+            
             // Find player's WebSocket and notify of warp completion
             const playerWs = Array.from(activePlayers.entries()).find(([ws, p]) => p.id === playerId)?.[0];
             if (playerWs) {
@@ -2849,6 +3011,14 @@ function startGameLoop() {
             // Award skill points for exploration and trading activities
             if (skillSystem) {
               await skillSystem.awardSkillPoints(p.id, 'ore_collected', 1);
+            }
+            
+            // Award research points for mining activities
+            if (researchSystem) {
+              await researchSystem.generateResearchPointsFromActivity(p.id, 'MINING', { 
+                oreType: ore.type,
+                value: collectedAmount 
+              });
             }
             
             // Remove ore from sector
