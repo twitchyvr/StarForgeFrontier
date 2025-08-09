@@ -18,6 +18,9 @@ const Database = require('./database');
 const SectorManager = require('./galaxy/SectorManager');
 const WarpSystem = require('./galaxy/WarpSystem');
 const { ORE_TYPES } = require('./galaxy/Sector');
+const { TradingStation } = require('./trading/TradingStation');
+const MarketSystem = require('./trading/MarketSystem');
+const { ContractSystem } = require('./trading/ContractSystem');
 
 const app = express();
 const server = http.createServer(app);
@@ -33,6 +36,11 @@ const db = new Database();
 // Initialize galaxy systems
 let sectorManager = null;
 let warpSystem = null;
+
+// Initialize trading systems
+let marketSystem = null;
+let contractSystem = null;
+const tradingStations = new Map(); // Active trading stations by sector
 
 // In-memory state for active gameplay
 const activePlayers = new Map(); // WebSocket connections
@@ -217,6 +225,14 @@ async function initializeServer() {
     warpSystem = new WarpSystem(db, sectorManager);
     console.log('Galaxy systems initialized successfully');
     
+    // Initialize trading systems
+    marketSystem = new MarketSystem(db);
+    contractSystem = new ContractSystem(db);
+    console.log('Trading systems initialized successfully');
+    
+    // Initialize starting trading stations
+    await initializeStartingTradingStations();
+    
     // Initialize starting sector (0,0) for backward compatibility
     await initializeStartingSector();
     
@@ -257,6 +273,26 @@ app.get('/api/galaxy/map/:x/:y', async (req, res) => {
     }
     
     const mapData = sectorManager.getGalaxyMapData({ x: centerX, y: centerY }, radius);
+    
+    // Add trading station information to the map data
+    if (mapData && mapData.sectors) {
+      for (const sector of mapData.sectors) {
+        try {
+          const stations = await db.getTradingStations(sector.x, sector.y);
+          if (stations.length > 0) {
+            sector.tradingStations = stations.map(station => ({
+              id: station.id,
+              name: station.station_name,
+              type: station.station_type,
+              position: { x: station.x, y: station.y }
+            }));
+          }
+        } catch (error) {
+          console.error(`Error loading trading stations for sector (${sector.x}, ${sector.y}):`, error);
+        }
+      }
+    }
+    
     res.json(mapData);
     
   } catch (error) {
@@ -304,6 +340,23 @@ app.post('/api/galaxy/warp', async (req, res) => {
       result = await warpSystem.emergencyWarp(playerId, playerData, targetCoords);
     } else {
       result = await warpSystem.initiateWarp(playerId, playerData, targetCoords);
+    }
+    
+    // If warp was successful, handle trading station integration
+    if (result.success && !result.inProgress) {
+      try {
+        // Get sector data for the destination
+        const sector = await sectorManager.getSector(targetCoords.x, targetCoords.y);
+        if (sector) {
+          await onSectorDiscovered(playerId, targetCoords.x, targetCoords.y, {
+            biome_type: sector.biomeType,
+            seed: sector.seed
+          });
+        }
+      } catch (error) {
+        console.error('Error integrating trading stations on warp:', error);
+        // Don't fail the warp if trading station integration fails
+      }
     }
     
     res.json(result);
@@ -408,6 +461,351 @@ app.post('/api/login', async (req, res) => {
   } catch (error) {
     console.error('Login error:', error);
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ===== TRADING SYSTEM API ENDPOINTS =====
+
+// Get trading stations in a sector
+app.get('/api/trading/stations/:sectorX/:sectorY', async (req, res) => {
+  try {
+    const { sectorX, sectorY } = req.params;
+    const stations = await db.getTradingStations(parseInt(sectorX), parseInt(sectorY));
+    
+    const stationsWithMarketData = [];
+    for (const station of stations) {
+      const inventory = await db.getStationInventory(station.id);
+      stationsWithMarketData.push({
+        ...station,
+        inventory
+      });
+    }
+    
+    res.json(stationsWithMarketData);
+  } catch (error) {
+    console.error('Error fetching trading stations:', error);
+    res.status(500).json({ error: 'Failed to fetch trading stations' });
+  }
+});
+
+// Get detailed station information including market data
+app.get('/api/trading/station/:stationId', async (req, res) => {
+  try {
+    const { stationId } = req.params;
+    const station = await db.getTradingStation(stationId);
+    
+    if (!station) {
+      return res.status(404).json({ error: 'Trading station not found' });
+    }
+    
+    const inventory = await db.getStationInventory(stationId);
+    const orderBook = marketSystem.getOrderBook(null, stationId); // Get all order books for station
+    
+    res.json({
+      ...station,
+      inventory,
+      orderBook
+    });
+  } catch (error) {
+    console.error('Error fetching station data:', error);
+    res.status(500).json({ error: 'Failed to fetch station data' });
+  }
+});
+
+// Buy from trading station (station sells to player)
+app.post('/api/trading/buy', async (req, res) => {
+  try {
+    const { playerId, stationId, oreType, quantity } = req.body;
+    
+    if (!playerId || !stationId || !oreType || !quantity) {
+      return res.status(400).json({ error: 'Missing required parameters' });
+    }
+    
+    // Load station
+    const station = await TradingStation.loadFromDB(stationId, db);
+    
+    // Process the sale
+    const result = station.processSellOrder(oreType, quantity, playerId);
+    
+    // Update station inventory in database
+    await station.saveToDB();
+    
+    // Update player resources
+    const playerData = await db.getPlayerData(playerId);
+    if (playerData.resources < result.totalPrice) {
+      return res.status(400).json({ error: 'Insufficient resources' });
+    }
+    
+    await db.updatePlayerStats(playerId, { 
+      resources: playerData.resources - result.totalPrice 
+    });
+    
+    // Record the trade
+    await db.recordTrade({
+      buyer_id: playerId,
+      seller_id: null,
+      station_id: stationId,
+      ore_type: oreType,
+      quantity: result.quantity,
+      price_per_unit: result.pricePerUnit,
+      total_value: result.totalPrice,
+      trade_type: 'station_to_player'
+    });
+    
+    res.json({
+      success: true,
+      transaction: result,
+      message: `Purchased ${result.quantity} ${oreType} for ${result.totalPrice} resources`
+    });
+    
+  } catch (error) {
+    console.error('Error processing buy order:', error);
+    res.status(500).json({ error: error.message || 'Failed to process purchase' });
+  }
+});
+
+// Sell to trading station (player sells to station)
+app.post('/api/trading/sell', async (req, res) => {
+  try {
+    const { playerId, stationId, oreType, quantity } = req.body;
+    
+    if (!playerId || !stationId || !oreType || !quantity) {
+      return res.status(400).json({ error: 'Missing required parameters' });
+    }
+    
+    // TODO: Check player inventory for the ore (implement player ore inventory system)
+    // For now, assume player has the ore
+    
+    // Load station
+    const station = await TradingStation.loadFromDB(stationId, db);
+    
+    // Process the purchase
+    const result = station.processBuyOrder(oreType, quantity, playerId);
+    
+    // Update station inventory in database
+    await station.saveToDB();
+    
+    // Update player resources
+    const playerData = await db.getPlayerData(playerId);
+    await db.updatePlayerStats(playerId, { 
+      resources: playerData.resources + result.totalPrice 
+    });
+    
+    // Record the trade
+    await db.recordTrade({
+      buyer_id: null,
+      seller_id: playerId,
+      station_id: stationId,
+      ore_type: oreType,
+      quantity: result.quantity,
+      price_per_unit: result.pricePerUnit,
+      total_value: result.totalPrice,
+      trade_type: 'player_to_station'
+    });
+    
+    res.json({
+      success: true,
+      transaction: result,
+      message: `Sold ${result.quantity} ${oreType} for ${result.totalPrice} resources`
+    });
+    
+  } catch (error) {
+    console.error('Error processing sell order:', error);
+    res.status(500).json({ error: error.message || 'Failed to process sale' });
+  }
+});
+
+// Create trade order (player-to-player trading)
+app.post('/api/trading/order', async (req, res) => {
+  try {
+    const { playerId, stationId, orderType, oreType, quantity, pricePerUnit } = req.body;
+    
+    const order = await marketSystem.createOrder({
+      playerId,
+      stationId,
+      orderType,
+      oreType,
+      quantity,
+      pricePerUnit
+    });
+    
+    res.json({
+      success: true,
+      order,
+      message: `${orderType} order created for ${quantity} ${oreType} at ${pricePerUnit} each`
+    });
+    
+  } catch (error) {
+    console.error('Error creating trade order:', error);
+    res.status(400).json({ error: error.message || 'Failed to create order' });
+  }
+});
+
+// Cancel trade order
+app.delete('/api/trading/order/:orderId', async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const { playerId } = req.body;
+    
+    const order = await marketSystem.cancelOrder(orderId, playerId);
+    
+    res.json({
+      success: true,
+      order,
+      message: 'Order cancelled successfully'
+    });
+    
+  } catch (error) {
+    console.error('Error cancelling order:', error);
+    res.status(400).json({ error: error.message || 'Failed to cancel order' });
+  }
+});
+
+// Get player's active orders
+app.get('/api/trading/orders/:playerId', async (req, res) => {
+  try {
+    const { playerId } = req.params;
+    const orders = marketSystem.getPlayerOrders(playerId);
+    res.json(orders);
+  } catch (error) {
+    console.error('Error fetching player orders:', error);
+    res.status(500).json({ error: 'Failed to fetch orders' });
+  }
+});
+
+// Get order book for specific ore and station
+app.get('/api/trading/orderbook/:stationId/:oreType', async (req, res) => {
+  try {
+    const { stationId, oreType } = req.params;
+    const orderBook = marketSystem.getOrderBook(oreType, stationId);
+    res.json(orderBook);
+  } catch (error) {
+    console.error('Error fetching order book:', error);
+    res.status(500).json({ error: 'Failed to fetch order book' });
+  }
+});
+
+// Get market price for ore at station
+app.get('/api/trading/price/:stationId/:oreType', async (req, res) => {
+  try {
+    const { stationId, oreType } = req.params;
+    const price = await marketSystem.getMarketPrice(stationId, oreType);
+    const history = await db.getMarketHistory(stationId, oreType, 20);
+    
+    res.json({
+      currentPrice: price,
+      priceHistory: history
+    });
+  } catch (error) {
+    console.error('Error fetching market price:', error);
+    res.status(500).json({ error: 'Failed to fetch price data' });
+  }
+});
+
+// Get market summary
+app.get('/api/trading/market-summary', async (req, res) => {
+  try {
+    const summary = await marketSystem.getMarketSummary();
+    res.json(summary);
+  } catch (error) {
+    console.error('Error fetching market summary:', error);
+    res.status(500).json({ error: 'Failed to fetch market summary' });
+  }
+});
+
+// ===== CONTRACT SYSTEM API ENDPOINTS =====
+
+// Get available contracts
+app.get('/api/contracts/available', async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 20;
+    const contracts = contractSystem.getAvailableContracts(limit);
+    res.json(contracts);
+  } catch (error) {
+    console.error('Error fetching available contracts:', error);
+    res.status(500).json({ error: 'Failed to fetch contracts' });
+  }
+});
+
+// Accept a contract
+app.post('/api/contracts/accept', async (req, res) => {
+  try {
+    const { contractId, playerId } = req.body;
+    
+    if (!contractId || !playerId) {
+      return res.status(400).json({ error: 'Missing contractId or playerId' });
+    }
+    
+    const contract = await contractSystem.acceptContract(contractId, playerId);
+    
+    res.json({
+      success: true,
+      contract,
+      message: `Contract accepted: ${contract.description}`
+    });
+    
+  } catch (error) {
+    console.error('Error accepting contract:', error);
+    res.status(400).json({ error: error.message || 'Failed to accept contract' });
+  }
+});
+
+// Get player's active contracts
+app.get('/api/contracts/player/:playerId', async (req, res) => {
+  try {
+    const { playerId } = req.params;
+    const status = req.query.status || null;
+    
+    const contracts = await db.getPlayerContracts(playerId, status);
+    res.json(contracts);
+  } catch (error) {
+    console.error('Error fetching player contracts:', error);
+    res.status(500).json({ error: 'Failed to fetch player contracts' });
+  }
+});
+
+// Complete a contract
+app.post('/api/contracts/complete', async (req, res) => {
+  try {
+    const { contractId, playerId } = req.body;
+    
+    if (!contractId || !playerId) {
+      return res.status(400).json({ error: 'Missing contractId or playerId' });
+    }
+    
+    const result = await contractSystem.completeContract(contractId, playerId);
+    
+    res.json({
+      success: true,
+      result,
+      message: result.message
+    });
+    
+  } catch (error) {
+    console.error('Error completing contract:', error);
+    res.status(400).json({ error: error.message || 'Failed to complete contract' });
+  }
+});
+
+// Get contract statistics
+app.get('/api/contracts/stats', async (req, res) => {
+  try {
+    const stats = await contractSystem.getContractStats();
+    res.json(stats);
+  } catch (error) {
+    console.error('Error fetching contract stats:', error);
+    res.status(500).json({ error: 'Failed to fetch contract statistics' });
+  }
+});
+
+// Get trading statistics
+app.get('/api/trading/stats', async (req, res) => {
+  try {
+    const stats = await marketSystem.getTradingStats();
+    res.json(stats);
+  } catch (error) {
+    console.error('Error fetching trading stats:', error);
+    res.status(500).json({ error: 'Failed to fetch trading statistics' });
   }
 });
 
@@ -1229,6 +1627,238 @@ wss.on('connection', async (ws) => {
   });
 });
 
+// ===== TRADING SYSTEM INTEGRATION =====
+
+/**
+ * Spawn trading stations in a sector based on biome and probability
+ */
+async function spawnTradingStationsInSector(sectorX, sectorY, biomeType, seed) {
+  try {
+    // Check if stations already exist
+    const existingStations = await db.getTradingStations(sectorX, sectorY);
+    if (existingStations.length > 0) {
+      return; // Already has stations
+    }
+    
+    // Determine if this sector should have trading stations
+    const stationProbability = calculateStationSpawnProbability(biomeType, sectorX, sectorY);
+    
+    // Create seeded RNG for consistent generation
+    let currentSeed = seed;
+    const seededRandom = () => {
+      currentSeed = (currentSeed * 9301 + 49297) % 233280;
+      return currentSeed / 233280;
+    };
+    
+    if (seededRandom() < stationProbability) {
+      // Determine number of stations (1-2 for most sectors, 3+ for hub sectors)
+      const maxStations = biomeType === 'DEEP_SPACE' ? 3 : (seededRandom() < 0.3 ? 2 : 1);
+      const stationCount = Math.ceil(seededRandom() * maxStations);
+      
+      console.log(`Spawning ${stationCount} trading station(s) in sector (${sectorX}, ${sectorY}) - ${biomeType}`);
+      
+      for (let i = 0; i < stationCount; i++) {
+        // Create new trading station
+        const station = new TradingStation(
+          { x: sectorX, y: sectorY },
+          biomeType,
+          seed + i, // Different seed for each station
+          db
+        );
+        
+        // Save to database
+        await station.saveToDB();
+        
+        // Cache the station
+        const sectorKey = `${sectorX},${sectorY}`;
+        if (!tradingStations.has(sectorKey)) {
+          tradingStations.set(sectorKey, []);
+        }
+        tradingStations.get(sectorKey).push(station);
+      }
+    }
+  } catch (error) {
+    console.error(`Error spawning trading stations in sector (${sectorX}, ${sectorY}):`, error);
+  }
+}
+
+/**
+ * Calculate probability of trading station spawning based on biome and location
+ */
+function calculateStationSpawnProbability(biomeType, sectorX, sectorY) {
+  let baseProbability = 0.15; // 15% base chance
+  
+  // Biome-specific modifiers
+  const biomeModifiers = {
+    'ASTEROID_FIELD': 0.25, // 25% - mining operations common
+    'NEBULA': 0.15, // 15% - fuel depots
+    'DEEP_SPACE': 0.30, // 30% - trade hubs in empty space
+    'STELLAR_NURSERY': 0.10, // 10% - dangerous, fewer stations
+    'ANCIENT_RUINS': 0.20, // 20% - research stations
+    'BLACK_HOLE_REGION': 0.05 // 5% - very dangerous
+  };
+  
+  baseProbability = biomeModifiers[biomeType] || baseProbability;
+  
+  // Distance from origin affects probability
+  const distance = Math.sqrt(sectorX * sectorX + sectorY * sectorY);
+  if (distance < 3) {
+    baseProbability *= 1.5; // 50% bonus near starting area
+  } else if (distance > 15) {
+    baseProbability *= 0.7; // 30% reduction in far sectors
+  }
+  
+  // Major trade routes (every 5 sectors in cardinal directions)
+  if ((sectorX === 0 && sectorY % 5 === 0) || (sectorY === 0 && sectorX % 5 === 0)) {
+    baseProbability *= 2.0; // Double chance on trade routes
+  }
+  
+  return Math.min(0.8, baseProbability); // Cap at 80% max
+}
+
+/**
+ * Load trading stations for a sector
+ */
+async function loadTradingStationsForSector(sectorX, sectorY) {
+  try {
+    const sectorKey = `${sectorX},${sectorY}`;
+    
+    // Check if already cached
+    if (tradingStations.has(sectorKey)) {
+      return tradingStations.get(sectorKey);
+    }
+    
+    // Load from database
+    const stationData = await db.getTradingStations(sectorX, sectorY);
+    const stations = [];
+    
+    for (const data of stationData) {
+      try {
+        const station = await TradingStation.loadFromDB(data.id, db);
+        stations.push(station);
+      } catch (error) {
+        console.error(`Error loading trading station ${data.id}:`, error);
+      }
+    }
+    
+    // Cache the stations
+    tradingStations.set(sectorKey, stations);
+    return stations;
+    
+  } catch (error) {
+    console.error(`Error loading trading stations for sector (${sectorX}, ${sectorY}):`, error);
+    return [];
+  }
+}
+
+/**
+ * Update trading systems (called periodically)
+ */
+async function updateTradingSystems() {
+  try {
+    // Update market system
+    if (marketSystem) {
+      await marketSystem.update();
+    }
+    
+    // Update all cached trading stations
+    for (const [sectorKey, stations] of tradingStations.entries()) {
+      for (const station of stations) {
+        station.update(); // Update pricing and inventory
+      }
+      
+      // Occasionally save stations to database (every 10th update cycle)
+      if (Math.random() < 0.1) {
+        for (const station of stations) {
+          try {
+            await station.saveToDB();
+          } catch (error) {
+            console.error(`Error saving station ${station.id}:`, error);
+          }
+        }
+      }
+    }
+    
+  } catch (error) {
+    console.error('Error updating trading systems:', error);
+  }
+}
+
+/**
+ * Integrate trading stations with sector discovery
+ */
+async function onSectorDiscovered(playerId, sectorX, sectorY, sectorData) {
+  try {
+    // Spawn trading stations if needed
+    await spawnTradingStationsInSector(sectorX, sectorY, sectorData.biome_type, sectorData.seed);
+    
+    // Load stations for the sector
+    await loadTradingStationsForSector(sectorX, sectorY);
+    
+  } catch (error) {
+    console.error(`Error handling sector discovery for trading system:`, error);
+  }
+}
+
+/**
+ * Initialize starting trading stations in sectors near origin
+ */
+async function initializeStartingTradingStations() {
+  try {
+    console.log('Initializing starting trading stations...');
+    
+    // Create trading stations in key starting sectors
+    const startingSectors = [
+      { x: 0, y: 0, biome: 'DEEP_SPACE' },     // Origin - guaranteed trade hub
+      { x: 1, y: 0, biome: 'ASTEROID_FIELD' },  // Mining depot
+      { x: 0, y: 1, biome: 'NEBULA' },         // Fuel depot
+      { x: -1, y: 0, biome: 'ANCIENT_RUINS' }, // Research station
+      { x: 0, y: -1, biome: 'ASTEROID_FIELD' } // Another mining depot
+    ];
+    
+    for (const sectorInfo of startingSectors) {
+      // Get or create the sector
+      let sector = await sectorManager.getSector(sectorInfo.x, sectorInfo.y);
+      if (!sector) {
+        // Create the sector if it doesn't exist
+        sector = await sectorManager.generateSector(sectorInfo.x, sectorInfo.y, null, sectorInfo.biome);
+      }
+      
+      // Force spawn a trading station in this sector
+      const seedForStation = Math.abs(sectorInfo.x * 1000 + sectorInfo.y);
+      
+      // Check if station already exists
+      const existingStations = await db.getTradingStations(sectorInfo.x, sectorInfo.y);
+      if (existingStations.length === 0) {
+        // Create new trading station
+        const station = new TradingStation(
+          { x: sectorInfo.x, y: sectorInfo.y },
+          sector.biomeType || sectorInfo.biome,
+          seedForStation,
+          db
+        );
+        
+        // Save to database
+        await station.saveToDB();
+        console.log(`Created starting trading station: ${station.name} at (${sectorInfo.x}, ${sectorInfo.y})`);
+        
+        // Cache the station
+        const sectorKey = `${sectorInfo.x},${sectorInfo.y}`;
+        if (!tradingStations.has(sectorKey)) {
+          tradingStations.set(sectorKey, []);
+        }
+        tradingStations.get(sectorKey).push(station);
+      } else {
+        console.log(`Trading station already exists at (${sectorInfo.x}, ${sectorInfo.y})`);
+      }
+    }
+    
+    console.log('Starting trading stations initialization complete');
+  } catch (error) {
+    console.error('Error initializing starting trading stations:', error);
+  }
+}
+
 // Main game loop
 function startGameLoop() {
   const TICK_INTERVAL = 1000 / 30;
@@ -1453,6 +2083,11 @@ function startGameLoop() {
     
     // Broadcast state
     broadcastState();
+    
+    // Update trading systems every 30 seconds (every 900 ticks at 30 FPS)
+    if (Date.now() % 30000 < TICK_INTERVAL * 2) {
+      await updateTradingSystems();
+    }
     
   }, TICK_INTERVAL);
 }

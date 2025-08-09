@@ -40,6 +40,7 @@
   let myLevel = 1;
   let shopItems = {};
   let activeEvents = [];
+  let playerInventory = new Map(); // Track player ore inventory
   let shipProperties = {
     speed: 2,
     cargoCapacity: 1000,
@@ -55,6 +56,9 @@
   
   // Ship editor system
   let shipEditor = null;
+  
+  // Trading system
+  let tradingUI = null;
   
   // Combat state
   let selectedTarget = null;
@@ -196,6 +200,21 @@
       if (shipEditor) {
         shipEditor.openEditor();
       }
+    } else if (e.key === 'T' || e.key === 't') {
+      e.preventDefault();
+      if (tradingUI) {
+        tradingUI.openTradingPanel('station');
+      }
+    } else if (e.key === 'M' || e.key === 'm') {
+      e.preventDefault();
+      if (tradingUI) {
+        tradingUI.openTradingPanel('market');
+      }
+    } else if (e.key === 'C' || e.key === 'c') {
+      e.preventDefault();
+      if (tradingUI) {
+        tradingUI.openTradingPanel('contracts');
+      }
     }
   });
 
@@ -292,9 +311,27 @@
         // Initialize ship editor
         shipEditor = new ShipEditor(gameClientInterface);
         
-        // Make galaxy UI, ship editor and game functions globally accessible
+        // Initialize trading UI
+        tradingUI = new TradingUI();
+        
+        // Connect trading UI to game client for access to player data
+        window.gameClient = {
+          get myId() { return myId; },
+          get players() { return players; },
+          get myResources() { return myResources; },
+          get shipProperties() { return shipProperties; },
+          get playerInventory() { return playerInventory; },
+          sendWebSocketMessage: (message) => {
+            if (ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify(message));
+            }
+          }
+        };
+        
+        // Make galaxy UI, ship editor, trading UI and game functions globally accessible
         window.galaxyUI = galaxyUI;
         window.shipEditor = shipEditor;
+        window.tradingUI = tradingUI;
         window.playSound = playSound;
       }
       
@@ -313,7 +350,27 @@
       ores = msg.ores;
       updatePlayerCount();
     } else if (msg.type === 'resources') {
+      const oldResources = myResources;
       myResources = msg.resources;
+      
+      // If resources increased, simulate ore collection for trading system
+      if (myResources > oldResources) {
+        const resourceGain = myResources - oldResources;
+        const oreQuantity = Math.max(1, Math.floor(resourceGain / 10)); // Simplified conversion
+        
+        // Simulate random ore type collection based on common ore types
+        const commonOreTypes = ['IRON', 'COPPER', 'SILVER', 'GOLD', 'TITANIUM'];
+        const oreType = msg.oreType || commonOreTypes[Math.floor(Math.random() * commonOreTypes.length)];
+        
+        const currentQuantity = playerInventory.get(oreType) || 0;
+        playerInventory.set(oreType, currentQuantity + oreQuantity);
+        
+        // Notify trading UI of inventory update if it exists
+        if (window.tradingUI) {
+          window.tradingUI.updateCargoDisplay();
+        }
+      }
+      
       updateHUD();
       renderShop(); // Update shop button states
     } else if (msg.type === 'shipProperties') {
@@ -441,6 +498,33 @@
         showNotification('Asteroid collapse detected! New ore deposits formed!', 'info', 3000);
         triggerShake(8, 300);
       }
+    } else if (msg.type === 'trading_transaction') {
+      // Handle completed trading transactions
+      if (msg.success) {
+        const { oreType, quantity, action, totalPrice } = msg.transaction;
+        
+        if (action === 'buy') {
+          // Add ores to inventory, subtract credits
+          const currentQuantity = playerInventory.get(oreType) || 0;
+          playerInventory.set(oreType, currentQuantity + quantity);
+          myResources -= totalPrice;
+        } else if (action === 'sell') {
+          // Remove ores from inventory, add credits
+          const currentQuantity = playerInventory.get(oreType) || 0;
+          playerInventory.set(oreType, Math.max(0, currentQuantity - quantity));
+          myResources += totalPrice;
+        }
+        
+        updateHUD();
+        if (window.tradingUI) {
+          window.tradingUI.updateCargoDisplay();
+        }
+      }
+    } else if (msg.type === 'contract_update') {
+      // Handle contract status updates
+      if (window.tradingUI) {
+        window.tradingUI.updateActiveContracts();
+      }
     } else if (msg.type === 'player_warp_start') {
       // Handle other players starting warp
       const warpingPlayer = players[msg.playerId];
@@ -484,6 +568,12 @@
     // Update galaxy UI resources
     if (galaxyUI) {
       galaxyUI.updateWarpDriveStatus();
+    }
+    
+    // Update trading UI if available
+    if (tradingUI) {
+      // Update with current player position for station proximity detection
+      // The trading UI will handle this through its periodic updates
     }
     
     // Update button states

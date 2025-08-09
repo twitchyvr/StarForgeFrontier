@@ -217,6 +217,119 @@ class Database {
         PRIMARY KEY (player_id, sector_x, sector_y),
         FOREIGN KEY (player_id) REFERENCES players (id),
         FOREIGN KEY (sector_x, sector_y) REFERENCES galaxy_sectors (sector_x, sector_y)
+      )`,
+
+      // Trading stations
+      `CREATE TABLE IF NOT EXISTS trading_stations (
+        id TEXT PRIMARY KEY,
+        sector_x INTEGER NOT NULL,
+        sector_y INTEGER NOT NULL,
+        station_name TEXT NOT NULL,
+        station_type TEXT NOT NULL,
+        biome_type TEXT NOT NULL,
+        x REAL NOT NULL,
+        y REAL NOT NULL,
+        reputation_modifier REAL DEFAULT 1.0,
+        last_restocked DATETIME DEFAULT CURRENT_TIMESTAMP,
+        is_active BOOLEAN DEFAULT 1,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (sector_x, sector_y) REFERENCES galaxy_sectors (sector_x, sector_y)
+      )`,
+
+      // Trading station inventory
+      `CREATE TABLE IF NOT EXISTS station_inventory (
+        station_id TEXT,
+        ore_type TEXT,
+        quantity INTEGER DEFAULT 0,
+        base_buy_price INTEGER NOT NULL,
+        base_sell_price INTEGER NOT NULL,
+        current_buy_price INTEGER NOT NULL,
+        current_sell_price INTEGER NOT NULL,
+        last_price_update DATETIME DEFAULT CURRENT_TIMESTAMP,
+        supply_level REAL DEFAULT 0.5,
+        demand_level REAL DEFAULT 0.5,
+        PRIMARY KEY (station_id, ore_type),
+        FOREIGN KEY (station_id) REFERENCES trading_stations (id)
+      )`,
+
+      // Market price history
+      `CREATE TABLE IF NOT EXISTS market_prices (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        station_id TEXT,
+        ore_type TEXT,
+        buy_price INTEGER,
+        sell_price INTEGER,
+        volume_traded INTEGER DEFAULT 0,
+        recorded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (station_id) REFERENCES trading_stations (id)
+      )`,
+
+      // Trade orders (buy/sell orders from players)
+      `CREATE TABLE IF NOT EXISTS trade_orders (
+        id TEXT PRIMARY KEY,
+        player_id TEXT,
+        station_id TEXT,
+        order_type TEXT NOT NULL, -- 'buy' or 'sell'
+        ore_type TEXT NOT NULL,
+        quantity INTEGER NOT NULL,
+        price_per_unit INTEGER NOT NULL,
+        total_value INTEGER NOT NULL,
+        status TEXT DEFAULT 'active', -- 'active', 'completed', 'cancelled', 'expired'
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        expires_at DATETIME,
+        completed_at DATETIME,
+        FOREIGN KEY (player_id) REFERENCES players (id),
+        FOREIGN KEY (station_id) REFERENCES trading_stations (id)
+      )`,
+
+      // Trade history
+      `CREATE TABLE IF NOT EXISTS trade_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        buyer_id TEXT,
+        seller_id TEXT,
+        station_id TEXT,
+        ore_type TEXT NOT NULL,
+        quantity INTEGER NOT NULL,
+        price_per_unit INTEGER NOT NULL,
+        total_value INTEGER NOT NULL,
+        trade_type TEXT NOT NULL, -- 'player_to_station', 'station_to_player', 'player_to_player'
+        traded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (buyer_id) REFERENCES players (id),
+        FOREIGN KEY (seller_id) REFERENCES players (id),
+        FOREIGN KEY (station_id) REFERENCES trading_stations (id)
+      )`,
+
+      // Delivery contracts
+      `CREATE TABLE IF NOT EXISTS delivery_contracts (
+        id TEXT PRIMARY KEY,
+        player_id TEXT,
+        contract_giver TEXT NOT NULL, -- station or NPC name
+        origin_station_id TEXT,
+        destination_station_id TEXT,
+        cargo_type TEXT NOT NULL,
+        cargo_quantity INTEGER NOT NULL,
+        base_reward INTEGER NOT NULL,
+        bonus_reward INTEGER DEFAULT 0,
+        distance INTEGER NOT NULL,
+        risk_level INTEGER DEFAULT 1, -- 1-5 difficulty
+        deadline DATETIME NOT NULL,
+        status TEXT DEFAULT 'available', -- 'available', 'accepted', 'in_progress', 'completed', 'failed', 'expired'
+        accepted_at DATETIME,
+        completed_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (player_id) REFERENCES players (id),
+        FOREIGN KEY (origin_station_id) REFERENCES trading_stations (id),
+        FOREIGN KEY (destination_station_id) REFERENCES trading_stations (id)
+      )`,
+
+      // Contract cargo tracking
+      `CREATE TABLE IF NOT EXISTS contract_cargo (
+        contract_id TEXT,
+        ore_type TEXT,
+        quantity_required INTEGER NOT NULL,
+        quantity_delivered INTEGER DEFAULT 0,
+        PRIMARY KEY (contract_id, ore_type),
+        FOREIGN KEY (contract_id) REFERENCES delivery_contracts (id)
       )`
     ];
 
@@ -796,6 +909,367 @@ class Database {
       totalWarps: totalWarps.count,
       biomeDistribution
     };
+  }
+
+  // ===== TRADING SYSTEM METHODS =====
+
+  /**
+   * Create a trading station
+   */
+  async createTradingStation(stationData) {
+    const result = await this.run(
+      `INSERT INTO trading_stations 
+       (id, sector_x, sector_y, station_name, station_type, biome_type, x, y, reputation_modifier) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        stationData.id,
+        stationData.sector_x,
+        stationData.sector_y,
+        stationData.station_name,
+        stationData.station_type,
+        stationData.biome_type,
+        stationData.x,
+        stationData.y,
+        stationData.reputation_modifier || 1.0
+      ]
+    );
+    return result;
+  }
+
+  /**
+   * Get trading stations in a sector
+   */
+  async getTradingStations(sectorX, sectorY) {
+    return await this.all(
+      'SELECT * FROM trading_stations WHERE sector_x = ? AND sector_y = ? AND is_active = 1',
+      [sectorX, sectorY]
+    );
+  }
+
+  /**
+   * Get trading station by ID
+   */
+  async getTradingStation(stationId) {
+    return await this.get(
+      'SELECT * FROM trading_stations WHERE id = ? AND is_active = 1',
+      [stationId]
+    );
+  }
+
+  /**
+   * Update station inventory
+   */
+  async updateStationInventory(stationId, oreType, inventoryData) {
+    const existing = await this.get(
+      'SELECT station_id FROM station_inventory WHERE station_id = ? AND ore_type = ?',
+      [stationId, oreType]
+    );
+
+    if (existing) {
+      await this.run(
+        `UPDATE station_inventory SET 
+         quantity = ?, current_buy_price = ?, current_sell_price = ?, 
+         supply_level = ?, demand_level = ?, last_price_update = CURRENT_TIMESTAMP
+         WHERE station_id = ? AND ore_type = ?`,
+        [
+          inventoryData.quantity,
+          inventoryData.current_buy_price,
+          inventoryData.current_sell_price,
+          inventoryData.supply_level,
+          inventoryData.demand_level,
+          stationId,
+          oreType
+        ]
+      );
+    } else {
+      await this.run(
+        `INSERT INTO station_inventory 
+         (station_id, ore_type, quantity, base_buy_price, base_sell_price, 
+          current_buy_price, current_sell_price, supply_level, demand_level) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          stationId,
+          oreType,
+          inventoryData.quantity,
+          inventoryData.base_buy_price,
+          inventoryData.base_sell_price,
+          inventoryData.current_buy_price,
+          inventoryData.current_sell_price,
+          inventoryData.supply_level,
+          inventoryData.demand_level
+        ]
+      );
+    }
+  }
+
+  /**
+   * Get station inventory
+   */
+  async getStationInventory(stationId, oreType = null) {
+    if (oreType) {
+      return await this.get(
+        'SELECT * FROM station_inventory WHERE station_id = ? AND ore_type = ?',
+        [stationId, oreType]
+      );
+    } else {
+      return await this.all(
+        'SELECT * FROM station_inventory WHERE station_id = ?',
+        [stationId]
+      );
+    }
+  }
+
+  /**
+   * Record market price
+   */
+  async recordMarketPrice(stationId, oreType, buyPrice, sellPrice, volume = 0) {
+    await this.run(
+      'INSERT INTO market_prices (station_id, ore_type, buy_price, sell_price, volume_traded) VALUES (?, ?, ?, ?, ?)',
+      [stationId, oreType, buyPrice, sellPrice, volume]
+    );
+  }
+
+  /**
+   * Get market price history
+   */
+  async getMarketHistory(stationId, oreType, limit = 50) {
+    return await this.all(
+      `SELECT * FROM market_prices 
+       WHERE station_id = ? AND ore_type = ? 
+       ORDER BY recorded_at DESC LIMIT ?`,
+      [stationId, oreType, limit]
+    );
+  }
+
+  /**
+   * Create trade order
+   */
+  async createTradeOrder(orderData) {
+    const result = await this.run(
+      `INSERT INTO trade_orders 
+       (id, player_id, station_id, order_type, ore_type, quantity, price_per_unit, total_value, expires_at) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        orderData.id,
+        orderData.player_id,
+        orderData.station_id,
+        orderData.order_type,
+        orderData.ore_type,
+        orderData.quantity,
+        orderData.price_per_unit,
+        orderData.total_value,
+        orderData.expires_at
+      ]
+    );
+    return result;
+  }
+
+  /**
+   * Get trade orders
+   */
+  async getTradeOrders(stationId, orderType = null, status = 'active') {
+    let sql = 'SELECT * FROM trade_orders WHERE station_id = ? AND status = ?';
+    let params = [stationId, status];
+
+    if (orderType) {
+      sql += ' AND order_type = ?';
+      params.push(orderType);
+    }
+
+    sql += ' ORDER BY created_at DESC';
+    return await this.all(sql, params);
+  }
+
+  /**
+   * Update trade order status
+   */
+  async updateTradeOrderStatus(orderId, status, completedAt = null) {
+    const updates = ['status = ?'];
+    const params = [status];
+
+    if (completedAt || status === 'completed') {
+      updates.push('completed_at = CURRENT_TIMESTAMP');
+    }
+
+    params.push(orderId);
+    await this.run(
+      `UPDATE trade_orders SET ${updates.join(', ')} WHERE id = ?`,
+      params
+    );
+  }
+
+  /**
+   * Record trade transaction
+   */
+  async recordTrade(tradeData) {
+    await this.run(
+      `INSERT INTO trade_history 
+       (buyer_id, seller_id, station_id, ore_type, quantity, price_per_unit, total_value, trade_type) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        tradeData.buyer_id,
+        tradeData.seller_id,
+        tradeData.station_id,
+        tradeData.ore_type,
+        tradeData.quantity,
+        tradeData.price_per_unit,
+        tradeData.total_value,
+        tradeData.trade_type
+      ]
+    );
+  }
+
+  /**
+   * Get trade history for player
+   */
+  async getPlayerTradeHistory(playerId, limit = 50) {
+    return await this.all(
+      `SELECT th.*, ts.station_name 
+       FROM trade_history th 
+       LEFT JOIN trading_stations ts ON th.station_id = ts.id 
+       WHERE th.buyer_id = ? OR th.seller_id = ? 
+       ORDER BY th.traded_at DESC LIMIT ?`,
+      [playerId, playerId, limit]
+    );
+  }
+
+  /**
+   * Create delivery contract
+   */
+  async createDeliveryContract(contractData) {
+    const result = await this.run(
+      `INSERT INTO delivery_contracts 
+       (id, contract_giver, origin_station_id, destination_station_id, cargo_type, 
+        cargo_quantity, base_reward, bonus_reward, distance, risk_level, deadline) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        contractData.id,
+        contractData.contract_giver,
+        contractData.origin_station_id,
+        contractData.destination_station_id,
+        contractData.cargo_type,
+        contractData.cargo_quantity,
+        contractData.base_reward,
+        contractData.bonus_reward || 0,
+        contractData.distance,
+        contractData.risk_level || 1,
+        contractData.deadline
+      ]
+    );
+
+    // Add cargo requirements
+    if (contractData.cargo_requirements) {
+      for (const cargo of contractData.cargo_requirements) {
+        await this.run(
+          'INSERT INTO contract_cargo (contract_id, ore_type, quantity_required) VALUES (?, ?, ?)',
+          [contractData.id, cargo.ore_type, cargo.quantity]
+        );
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Get available delivery contracts
+   */
+  async getAvailableContracts(limit = 20) {
+    return await this.all(
+      `SELECT dc.*, 
+              os.station_name as origin_name, 
+              ds.station_name as destination_name,
+              os.sector_x as origin_sector_x, os.sector_y as origin_sector_y,
+              ds.sector_x as dest_sector_x, ds.sector_y as dest_sector_y
+       FROM delivery_contracts dc
+       LEFT JOIN trading_stations os ON dc.origin_station_id = os.id
+       LEFT JOIN trading_stations ds ON dc.destination_station_id = ds.id
+       WHERE dc.status = 'available' AND dc.deadline > CURRENT_TIMESTAMP
+       ORDER BY dc.created_at DESC LIMIT ?`,
+      [limit]
+    );
+  }
+
+  /**
+   * Accept delivery contract
+   */
+  async acceptDeliveryContract(contractId, playerId) {
+    const result = await this.run(
+      `UPDATE delivery_contracts 
+       SET status = 'accepted', player_id = ?, accepted_at = CURRENT_TIMESTAMP 
+       WHERE id = ? AND status = 'available'`,
+      [playerId, contractId]
+    );
+    
+    if (result.changes === 0) {
+      throw new Error('Contract not available or already accepted');
+    }
+    
+    return result;
+  }
+
+  /**
+   * Update contract status
+   */
+  async updateContractStatus(contractId, status, completedAt = null) {
+    const updates = ['status = ?'];
+    const params = [status];
+
+    if (completedAt || status === 'completed') {
+      updates.push('completed_at = CURRENT_TIMESTAMP');
+    }
+
+    params.push(contractId);
+    await this.run(
+      `UPDATE delivery_contracts SET ${updates.join(', ')} WHERE id = ?`,
+      params
+    );
+  }
+
+  /**
+   * Get player's active contracts
+   */
+  async getPlayerContracts(playerId, status = null) {
+    let sql = `SELECT dc.*, 
+                      os.station_name as origin_name, 
+                      ds.station_name as destination_name,
+                      os.sector_x as origin_sector_x, os.sector_y as origin_sector_y,
+                      ds.sector_x as dest_sector_x, ds.sector_y as dest_sector_y
+               FROM delivery_contracts dc
+               LEFT JOIN trading_stations os ON dc.origin_station_id = os.id
+               LEFT JOIN trading_stations ds ON dc.destination_station_id = ds.id
+               WHERE dc.player_id = ?`;
+    
+    let params = [playerId];
+
+    if (status) {
+      sql += ' AND dc.status = ?';
+      params.push(status);
+    }
+
+    sql += ' ORDER BY dc.accepted_at DESC';
+    return await this.all(sql, params);
+  }
+
+  /**
+   * Get contract cargo requirements
+   */
+  async getContractCargo(contractId) {
+    return await this.all(
+      'SELECT * FROM contract_cargo WHERE contract_id = ?',
+      [contractId]
+    );
+  }
+
+  /**
+   * Update contract cargo delivery
+   */
+  async updateContractCargo(contractId, oreType, quantityDelivered) {
+    await this.run(
+      `UPDATE contract_cargo 
+       SET quantity_delivered = quantity_delivered + ? 
+       WHERE contract_id = ? AND ore_type = ?`,
+      [quantityDelivered, contractId, oreType]
+    );
   }
 
   /**
