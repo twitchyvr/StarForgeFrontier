@@ -1,0 +1,158 @@
+name: Deploy to Render
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy to Render.com
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Run tests before deployment
+      run: npm test
+      env:
+        NODE_ENV: test
+
+    - name: Notify deployment start
+      run: |
+        echo "🚀 Starting deployment to Render.com"
+        echo "Commit: ${{ github.sha }}"
+        echo "Branch: ${{ github.ref_name }}"
+
+    # Render automatically deploys on push to main branch
+    # But we can trigger a manual deploy via API if needed
+    - name: Trigger Render deployment
+      if: github.event_name == 'workflow_dispatch'
+      run: |
+        if [ -n "${{ secrets.RENDER_API_KEY }}" ] && [ -n "${{ vars.RENDER_SERVICE_ID }}" ]; then
+          curl -X POST \
+            -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            "https://api.render.com/v1/services/${{ vars.RENDER_SERVICE_ID }}/deploys" \
+            -d '{}'
+          echo "✅ Manual deployment triggered"
+        else
+          echo "ℹ️ Auto-deployment will happen via Git integration"
+        fi
+
+    - name: Wait for deployment
+      run: |
+        echo "⏳ Waiting for Render deployment to complete..."
+        sleep 120 # Give Render time to build and deploy
+
+    - name: Test deployment
+      run: |
+        echo "🧪 Testing deployment..."
+        
+        # Test health endpoint
+        MAX_RETRIES=10
+        RETRY=0
+        while [ $RETRY -lt $MAX_RETRIES ]; do
+          if curl -f -s "https://starforgefrontier.onrender.com/api/health"; then
+            echo "✅ Health check passed"
+            break
+          else
+            echo "⏳ Health check failed, retrying... ($((RETRY + 1))/$MAX_RETRIES)"
+            RETRY=$((RETRY + 1))
+            sleep 30
+          fi
+        done
+        
+        if [ $RETRY -eq $MAX_RETRIES ]; then
+          echo "❌ Health check failed after $MAX_RETRIES retries"
+          exit 1
+        fi
+
+        # Test main page
+        if curl -f -s "https://starforgefrontier.onrender.com/" > /dev/null; then
+          echo "✅ Main page accessible"
+        else
+          echo "❌ Main page not accessible"
+          exit 1
+        fi
+
+        # Test authentication page
+        if curl -f -s "https://starforgefrontier.onrender.com/auth.html" > /dev/null; then
+          echo "✅ Authentication page accessible"
+        else
+          echo "❌ Authentication page not accessible"
+          exit 1
+        fi
+
+    - name: Deployment success
+      run: |
+        echo "🎉 Deployment to Render.com completed successfully!"
+        echo "🌐 Live at: https://starforgefrontier.onrender.com/"
+        echo "🔗 Auth page: https://starforgefrontier.onrender.com/auth.html"
+        echo "📊 Health check: https://starforgefrontier.onrender.com/api/health"
+
+  post-deploy:
+    name: Post-Deployment Monitoring
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: success()
+
+    steps:
+    - name: Monitor deployment
+      run: |
+        echo "📊 Starting post-deployment monitoring..."
+        
+        # Monitor for 5 minutes to ensure stability
+        for i in {1..10}; do
+          echo "Check $i/10..."
+          
+          if curl -f -s "https://starforgefrontier.onrender.com/api/health"; then
+            echo "✅ Health check $i passed"
+          else
+            echo "❌ Health check $i failed"
+            exit 1
+          fi
+          
+          sleep 30
+        done
+        
+        echo "🎯 Deployment is stable!"
+
+    - name: Update status
+      run: |
+        echo "📈 Deployment metrics:"
+        echo "- Service: StarForgeFrontier"
+        echo "- Environment: Production"
+        echo "- Platform: Render.com"
+        echo "- Commit: ${{ github.sha }}"
+        echo "- Time: $(date)"
+        echo "- Status: ✅ SUCCESS"
+
+  notification:
+    name: Notify Team
+    runs-on: ubuntu-latest
+    needs: [deploy, post-deploy]
+    if: always()
+
+    steps:
+    - name: Success notification
+      if: needs.deploy.result == 'success' && needs.post-deploy.result == 'success'
+      run: |
+        echo "🎉 SUCCESS: StarForgeFrontier deployed successfully!"
+        echo "🚀 Live at: https://starforgefrontier.onrender.com/"
+        
+    - name: Failure notification  
+      if: needs.deploy.result == 'failure' || needs.post-deploy.result == 'failure'
+      run: |
+        echo "💥 FAILURE: StarForgeFrontier deployment failed!"
+        echo "🔧 Please check the logs and fix issues"

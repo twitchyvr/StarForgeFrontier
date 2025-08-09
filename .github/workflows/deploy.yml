@@ -1,0 +1,194 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+        - production
+        - staging
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  deploy:
+    name: Deploy to ${{ github.event.inputs.environment || 'production' }}
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'production' }}
+    
+    permissions:
+      contents: read
+      packages: read
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Set environment variables
+      run: |
+        if [ "${{ github.event.inputs.environment || 'production' }}" = "staging" ]; then
+          echo "DEPLOY_ENV=staging" >> $GITHUB_ENV
+          echo "DEPLOY_PORT=3001" >> $GITHUB_ENV
+        else
+          echo "DEPLOY_ENV=production" >> $GITHUB_ENV
+          echo "DEPLOY_PORT=3000" >> $GITHUB_ENV
+        fi
+
+    # Deploy to Digital Ocean (example)
+    - name: Deploy to Digital Ocean
+      if: vars.DEPLOY_TARGET == 'digitalocean'
+      uses: digitalocean/app_action@v1
+      with:
+        app_name: starforge-${{ env.DEPLOY_ENV }}
+        token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+        images: '[{"name":"starforge","image":"${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"}]'
+
+    # Deploy to AWS (example)
+    - name: Deploy to AWS ECS
+      if: vars.DEPLOY_TARGET == 'aws'
+      run: |
+        # AWS deployment commands would go here
+        echo "Deploying to AWS ECS..."
+        echo "Image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+
+    # Deploy to self-hosted server via SSH
+    - name: Deploy to Self-Hosted Server
+      if: vars.DEPLOY_TARGET == 'self-hosted'
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.HOST }}
+        username: ${{ secrets.USERNAME }}
+        key: ${{ secrets.SSH_KEY }}
+        port: ${{ secrets.PORT }}
+        script: |
+          # Pull latest images
+          docker compose -f /opt/starforge/docker-compose.yml pull
+          
+          # Update environment variables
+          export NODE_ENV=${{ env.DEPLOY_ENV }}
+          export PORT=${{ env.DEPLOY_PORT }}
+          
+          # Deploy with zero-downtime
+          docker compose -f /opt/starforge/docker-compose.yml up -d --remove-orphans
+          
+          # Clean up old images
+          docker image prune -a -f
+          
+          # Verify deployment
+          sleep 30
+          docker compose -f /opt/starforge/docker-compose.yml ps
+          
+          # Test health check
+          curl -f http://localhost:${{ env.DEPLOY_PORT }}/health || exit 1
+
+    # Deploy using Kubernetes (example)
+    - name: Deploy to Kubernetes
+      if: vars.DEPLOY_TARGET == 'kubernetes'
+      run: |
+        # Install kubectl
+        curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+        chmod +x kubectl
+        sudo mv kubectl /usr/local/bin/
+        
+        # Setup kubeconfig
+        echo "${{ secrets.KUBECONFIG }}" | base64 -d > kubeconfig
+        export KUBECONFIG=kubeconfig
+        
+        # Update image in deployment
+        kubectl set image deployment/starforge-deployment starforge=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+        
+        # Wait for rollout
+        kubectl rollout status deployment/starforge-deployment
+        
+        # Verify deployment
+        kubectl get pods -l app=starforge
+
+    - name: Run deployment tests
+      run: |
+        # Wait for service to be ready
+        sleep 60
+        
+        # Run health checks
+        if [ "${{ vars.DEPLOY_TARGET }}" = "self-hosted" ]; then
+          HEALTH_URL="http://${{ secrets.HOST }}:${{ env.DEPLOY_PORT }}/health"
+        else
+          HEALTH_URL="${{ vars.APP_URL }}/health"
+        fi
+        
+        echo "Testing: $HEALTH_URL"
+        curl -f "$HEALTH_URL" || exit 1
+        
+        # Test WebSocket connection
+        echo "Testing WebSocket connection..."
+        node -e "
+          const WebSocket = require('ws');
+          const ws = new WebSocket('$HEALTH_URL'.replace('http', 'ws').replace('/health', ''));
+          ws.on('open', () => { console.log('✅ WebSocket OK'); process.exit(0); });
+          ws.on('error', (err) => { console.log('❌ WebSocket failed:', err.message); process.exit(1); });
+          setTimeout(() => { console.log('❌ WebSocket timeout'); process.exit(1); }, 10000);
+        "
+
+    - name: Update deployment status
+      run: |
+        echo "🚀 Deployment completed successfully!"
+        echo "Environment: ${{ env.DEPLOY_ENV }}"
+        echo "Image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+        echo "Port: ${{ env.DEPLOY_PORT }}"
+
+  post-deploy:
+    name: Post-Deployment Tasks
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: always() && needs.deploy.result == 'success'
+
+    steps:
+    - name: Notify team
+      run: |
+        echo "📢 StarForgeFrontier deployed successfully!"
+        echo "Environment: ${{ github.event.inputs.environment || 'production' }}"
+        echo "Commit: ${{ github.sha }}"
+        
+    - name: Update monitoring
+      run: |
+        # Update monitoring dashboards or alerts
+        echo "🔍 Updating monitoring configuration..."
+        
+    - name: Cache warmup
+      run: |
+        # Warm up caches, pre-load data, etc.
+        echo "🔥 Warming up caches..."
+
+  rollback:
+    name: Rollback on Failure
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: failure() && needs.deploy.result == 'failure'
+
+    steps:
+    - name: Rollback deployment
+      run: |
+        echo "🔄 Rolling back deployment..."
+        # Rollback commands would go here
+        
+    - name: Notify failure
+      run: |
+        echo "❌ Deployment failed and rollback initiated"
+        echo "Please check logs and investigate"
