@@ -1,0 +1,41 @@
+# Render.com deployment configuration
+services:
+  # Main StarForgeFrontier web service
+  - type: web
+    name: starforgefrontier
+    env: node
+    region: virginia # Best for Chicago/East Coast users
+    buildCommand: npm ci --only=production
+    startCommand: node server-enhanced.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        fromService:
+          name: starforgefrontier
+          type: web
+          property: port
+      - key: DATABASE_PATH
+        value: /opt/render/project/src/data/starforge.db
+    # Auto-deploy from main branch
+    branch: main
+    # Health check
+    healthCheckPath: /api/health
+    # Instance specifications (free tier)
+    plan: free
+    # Persistent disk for database
+    disk:
+      name: starforge-data
+      mountPath: /opt/render/project/src/data
+      sizeGB: 1
+
+  # Background service for database backups (if needed on paid plan)
+  # - type: worker
+  #   name: backup-service
+  #   env: node
+  #   buildCommand: npm ci --only=production
+  #   startCommand: node scripts/backup-worker.js
+  #   envVars:
+  #     - key: NODE_ENV
+  #       value: production
+  #   plan: free

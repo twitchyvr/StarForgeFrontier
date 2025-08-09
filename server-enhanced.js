@@ -129,6 +129,58 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
+// Health check endpoint for monitoring and load balancers
+app.get('/api/health', (req, res) => {
+  const health = {
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    environment: process.env.NODE_ENV || 'development',
+    version: require('./package.json').version,
+    memory: {
+      used: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
+      total: Math.round(process.memoryUsage().heapTotal / 1024 / 1024)
+    },
+    players: {
+      active: activePlayers.size,
+      sessions: playerSessions.size
+    },
+    database: {
+      initialized: db.initialized
+    }
+  };
+  
+  res.json(health);
+});
+
+// Metrics endpoint for monitoring (Prometheus format)
+app.get('/metrics', (req, res) => {
+  const metrics = [
+    `# HELP active_players Number of active players`,
+    `# TYPE active_players gauge`,
+    `active_players ${activePlayers.size}`,
+    ``,
+    `# HELP game_sessions Number of active game sessions`,
+    `# TYPE game_sessions gauge`, 
+    `game_sessions ${playerSessions.size}`,
+    ``,
+    `# HELP process_memory_usage_bytes Memory usage in bytes`,
+    `# TYPE process_memory_usage_bytes gauge`,
+    `process_memory_usage_bytes ${process.memoryUsage().heapUsed}`,
+    ``,
+    `# HELP process_uptime_seconds Process uptime in seconds`,
+    `# TYPE process_uptime_seconds counter`,
+    `process_uptime_seconds ${process.uptime()}`,
+    ``,
+    `# HELP database_initialized Database initialization status`,
+    `# TYPE database_initialized gauge`,
+    `database_initialized ${db.initialized ? 1 : 0}`
+  ].join('\n');
+  
+  res.set('Content-Type', 'text/plain');
+  res.send(metrics);
+});
+
 // Leaderboard endpoint
 app.get('/api/leaderboard/:category', async (req, res) => {
   try {

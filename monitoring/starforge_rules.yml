@@ -1,0 +1,72 @@
+groups:
+  - name: starforge.rules
+    rules:
+      # High-level application health
+      - alert: StarForgeDown
+        expr: up{job="starforge"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "StarForgeFrontier server is down"
+          description: "StarForgeFrontier has been down for more than 1 minute."
+
+      # High memory usage
+      - alert: HighMemoryUsage
+        expr: (process_resident_memory_bytes{job="starforge"} / 1024 / 1024) > 500
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage detected"
+          description: "StarForgeFrontier is using {{ $value }}MB of memory."
+
+      # High CPU usage
+      - alert: HighCPUUsage
+        expr: rate(process_cpu_seconds_total{job="starforge"}[5m]) * 100 > 80
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage detected"
+          description: "StarForgeFrontier CPU usage is {{ $value }}%."
+
+      # WebSocket connection issues
+      - alert: WebSocketErrors
+        expr: increase(websocket_errors_total{job="starforge"}[5m]) > 10
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High WebSocket error rate"
+          description: "{{ $value }} WebSocket errors in the last 5 minutes."
+
+      # Database connection issues
+      - alert: DatabaseErrors
+        expr: increase(database_errors_total{job="starforge"}[5m]) > 5
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Database connection errors"
+          description: "{{ $value }} database errors in the last 5 minutes."
+
+      # Player capacity warning
+      - alert: HighPlayerCount
+        expr: active_players{job="starforge"} > 100
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High player count"
+          description: "{{ $value }} active players (consider scaling)."
+
+      # Redis down
+      - alert: RedisDown
+        expr: up{job="redis"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Redis is down"
+          description: "Redis has been down for more than 1 minute."

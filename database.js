@@ -18,7 +18,22 @@ class Database {
    */
   async initialize() {
     return new Promise((resolve, reject) => {
-      const dbPath = process.env.NODE_ENV === 'test' ? ':memory:' : 'starforge.db';
+      let dbPath;
+      if (process.env.NODE_ENV === 'test') {
+        dbPath = ':memory:';
+      } else if (process.env.DATABASE_PATH) {
+        // Use custom database path (for Render.com persistent disk)
+        const fs = require('fs');
+        const path = require('path');
+        const dir = path.dirname(process.env.DATABASE_PATH);
+        if (!fs.existsSync(dir)) {
+          fs.mkdirSync(dir, { recursive: true });
+        }
+        dbPath = process.env.DATABASE_PATH;
+      } else {
+        dbPath = 'starforge.db';
+      }
+      
       this.db = new sqlite3.Database(dbPath, (err) => {
         if (err) {
           reject(err);
