@@ -232,6 +232,15 @@ async function initializeServer() {
     await db.initialize();
     console.log('Database initialized successfully');
     
+    // Initialize skill system first (required by other systems)
+    skillSystem = new SkillSystem(db);
+    console.log('Skill system initialized successfully');
+    
+    // Initialize faction system
+    factionOrchestrator = new FactionOrchestrator(db);
+    await factionOrchestrator.initialize();
+    console.log('Faction system initialized successfully');
+    
     // Initialize galaxy systems with enhanced hazard support
     sectorManager = new EnhancedSectorManager(db, skillSystem);
     await sectorManager.initialize();
@@ -242,15 +251,6 @@ async function initializeServer() {
     marketSystem = new MarketSystem(db);
     contractSystem = new ContractSystem(db);
     console.log('Trading systems initialized successfully');
-    
-    // Initialize faction system
-    factionOrchestrator = new FactionOrchestrator(db);
-    await factionOrchestrator.initialize();
-    console.log('Faction system initialized successfully');
-    
-    // Initialize skill system
-    skillSystem = new SkillSystem(db);
-    console.log('Skill system initialized successfully');
     
     // Initialize guild system
     guildSystem = new GuildSystem(db, skillSystem, factionOrchestrator);
@@ -281,7 +281,7 @@ async function initializeServer() {
 // Initialize starting sector for backward compatibility
 async function initializeStartingSector() {
   try {
-    const startingSector = await sectorManager.getSector({ x: 0, y: 0 });
+    const startingSector = await sectorManager.getSector(0, 0);
     console.log(`Starting sector (0,0) initialized - Biome: ${startingSector.biome.name}`);
   } catch (error) {
     console.error('Error initializing starting sector:', error);

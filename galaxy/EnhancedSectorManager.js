@@ -626,6 +626,22 @@ class EnhancedSectorManager {
   }
 
   /**
+   * Update all loaded sectors (compatibility method)
+   */
+  updateAllSectors() {
+    const triggeredEvents = [];
+    
+    for (const sector of this.activeSectors.values()) {
+      if (sector.isLoaded) {
+        const events = sector.update();
+        triggeredEvents.push(...events);
+      }
+    }
+    
+    return triggeredEvents;
+  }
+
+  /**
    * Clean shutdown
    */
   async shutdown() {
