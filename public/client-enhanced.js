@@ -47,6 +47,10 @@
     weaponRange: 0
   };
   
+  // Galaxy system
+  let galaxyUI = null;
+  let currentSectorData = null;
+  
   // Combat state
   let selectedTarget = null;
   let weaponCooldown = 0;
@@ -252,6 +256,27 @@
       if (msg.playerData && msg.playerData.shipProperties) {
         shipProperties = msg.playerData.shipProperties;
       }
+      
+      // Initialize galaxy UI after connection
+      if (!galaxyUI) {
+        // Create game client interface for galaxy UI
+        const gameClientInterface = {
+          ws: ws,
+          get myResources() { return myResources; },
+          get players() { return players; },
+          get myId() { return myId; },
+          showNotification: showNotification,
+          triggerShake: triggerShake,
+          get particleEffects() { return particleEffects; }
+        };
+        
+        galaxyUI = new GalaxyUI(gameClientInterface);
+        
+        // Make galaxy UI and game functions globally accessible
+        window.galaxyUI = galaxyUI;
+        window.playSound = playSound;
+      }
+      
       showNotification('Connected to StarForgeFrontier', 'success');
       updatePlayerCount();
     } else if (msg.type === 'update') {
@@ -340,6 +365,67 @@
           selectedTarget = null;
         }
       }
+    } else if (msg.type === 'galaxy_map') {
+      // Handle galaxy map data
+      if (galaxyUI) {
+        galaxyUI.handleGalaxyMapData(msg.data);
+      }
+    } else if (msg.type === 'warp_targets') {
+      // Handle warp targets data
+      if (galaxyUI) {
+        galaxyUI.handleWarpTargetsData(msg.data);
+      }
+    } else if (msg.type === 'warp_result') {
+      // Handle warp initiation result
+      if (msg.result.success) {
+        showNotification('Warp initiated successfully!', 'success');
+        if (galaxyUI && msg.result.arrivalTime) {
+          galaxyUI.createWarpTravelEffect(msg.result.fromCoords, msg.result.toCoords);
+        }
+      } else {
+        showNotification(`Warp failed: ${msg.result.reason}`, 'error');
+      }
+    } else if (msg.type === 'warp_status') {
+      // Handle warp status updates
+      if (galaxyUI) {
+        galaxyUI.handleWarpStatus(msg.status);
+      }
+    } else if (msg.type === 'warp_completed') {
+      // Handle warp completion
+      if (galaxyUI) {
+        galaxyUI.handleWarpCompletion(msg.data);
+      }
+      showNotification('Warp completed!', 'success');
+      triggerShake(10, 300);
+    } else if (msg.type === 'warp_cancelled') {
+      // Handle warp cancellation
+      showNotification(`Warp cancelled. Fuel refund: ${msg.result.fuelRefund}`, 'info');
+      if (galaxyUI) {
+        galaxyUI.updateWarpDriveStatus();
+      }
+    } else if (msg.type === 'sector_info') {
+      // Handle current sector information
+      currentSectorData = msg.sector;
+      if (galaxyUI) {
+        galaxyUI.handleSectorInfo(msg.sector);
+      }
+    } else if (msg.type === 'sector_event') {
+      // Handle sector-specific events
+      if (msg.event && msg.event.type === 'supernova') {
+        handleSupernova(msg.event);
+      } else if (msg.event && msg.event.type === 'tech_activation') {
+        showNotification('Ancient technology activated in this sector!', 'event', 4000);
+        triggerShake(12, 400);
+      } else if (msg.event && msg.event.type === 'asteroid_collapse') {
+        showNotification('Asteroid collapse detected! New ore deposits formed!', 'info', 3000);
+        triggerShake(8, 300);
+      }
+    } else if (msg.type === 'player_warp_start') {
+      // Handle other players starting warp
+      const warpingPlayer = players[msg.playerId];
+      if (warpingPlayer) {
+        showNotification(`${warpingPlayer.username || 'Player'} has warped away`, 'info', 2000);
+      }
     }
   };
 
@@ -359,16 +445,33 @@
     const player = players[myId];
     if (player) {
       positionEl.textContent = `${Math.round(player.x)}, ${Math.round(player.y)}`;
+      
+      // Update galaxy UI with player position
+      if (galaxyUI) {
+        galaxyUI.updateForPlayerPosition(player.x, player.y);
+        
+        // Request sector info if we haven't received it yet
+        if (!currentSectorData) {
+          ws.send(JSON.stringify({ type: 'request_sector_info' }));
+        }
+      }
     }
     
     // Update ship stats display
     updateShipStats();
+    
+    // Update galaxy UI resources
+    if (galaxyUI) {
+      galaxyUI.updateWarpDriveStatus();
+    }
     
     // Update button states
     addEngineBtn.disabled = myResources < 50;
     addCargoBtn.disabled = myResources < 30;
     if (addWeaponBtn) addWeaponBtn.disabled = myResources < 70;
     if (addShieldBtn) addShieldBtn.disabled = myResources < 60;
+    const addWarpDriveBtn = document.getElementById('addWarpDrive');
+    if (addWarpDriveBtn) addWarpDriveBtn.disabled = myResources < 150;
   }
   
   // Update ship statistics display
@@ -547,6 +650,22 @@
         ctx.beginPath();
         ctx.arc(p.x, p.y, 2 * p.life, 0, Math.PI * 2);
         ctx.fill();
+      } else if (p.type === 'warp_arrival') {
+        // Warp arrival particles with blue glow effect
+        ctx.fillStyle = p.color;
+        ctx.shadowColor = p.color;
+        ctx.shadowBlur = 15;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 6 * p.life, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Add streaking effect
+        ctx.strokeStyle = p.color;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(p.x - p.vx * 3, p.y - p.vy * 3);
+        ctx.lineTo(p.x, p.y);
+        ctx.stroke();
       } else {
         // Default explosion particles
         ctx.fillStyle = p.color;
@@ -627,6 +746,27 @@
     showNotification('Shield module added!', 'success');
     triggerShake(8, 250);
   });
+
+  // Add warp drive module handler
+  const addWarpDriveBtn = document.getElementById('addWarpDrive');
+  if (addWarpDriveBtn) {
+    addWarpDriveBtn.addEventListener('click', () => {
+      const self = players[myId];
+      if (!self || myResources < 150) return;
+      const offset = (self.modules.length) * 22;
+      const module = { id: 'warp_drive', x: offset, y: 0 };
+      ws.send(JSON.stringify({ type: 'build', module }));
+      showNotification('Warp drive module added!', 'success');
+      triggerShake(10, 300);
+      
+      // Update galaxy UI warp capabilities
+      if (galaxyUI) {
+        setTimeout(() => {
+          galaxyUI.requestWarpTargets();
+        }, 500);
+      }
+    });
+  }
 
   // Screen shake
   function triggerShake(magnitude, duration) {
@@ -895,6 +1035,28 @@
         }
         break;
         
+      case 'warpCharge':
+        length = sampleRate * 2.0; // 2 seconds
+        buffer = audioContext.createBuffer(1, length, sampleRate);
+        data = buffer.getChannelData(0);
+        for (let i = 0; i < length; i++) {
+          const t = i / sampleRate;
+          const frequency = 100 + t * 200; // Rising frequency
+          data[i] = Math.sin(2 * Math.PI * frequency * t) * (1 - Math.exp(-t * 3)) * Math.exp(-t * 0.5) * 0.4;
+        }
+        break;
+        
+      case 'warpJump':
+        length = sampleRate * 0.8;
+        buffer = audioContext.createBuffer(1, length, sampleRate);
+        data = buffer.getChannelData(0);
+        for (let i = 0; i < length; i++) {
+          const t = i / sampleRate;
+          const envelope = Math.exp(-t * 4);
+          data[i] = (Math.sin(2 * Math.PI * 800 * t) + Math.sin(2 * Math.PI * 1200 * t)) * envelope * 0.3;
+        }
+        break;
+        
       default:
         return null;
     }
@@ -1119,6 +1281,75 @@
     return points;
   }
 
+  // Biome-specific environmental effects
+  function drawBiomeEffects(camX, camY) {
+    if (!currentSectorData || !currentSectorData.biome) return;
+    
+    const biomeName = currentSectorData.biome.name;
+    const time = performance.now() * 0.001;
+    
+    switch (biomeName) {
+      case 'Nebula':
+        // Draw nebula clouds with swirling effect
+        ctx.save();
+        ctx.globalAlpha = 0.3;
+        for (let i = 0; i < 5; i++) {
+          const angle = time * 0.2 + i * (Math.PI * 2 / 5);
+          const radius = 100 + Math.sin(time + i) * 30;
+          const x = camX + Math.cos(angle) * radius;
+          const y = camY + Math.sin(angle) * radius;
+          
+          const gradient = ctx.createRadialGradient(x, y, 0, x, y, 80);
+          gradient.addColorStop(0, 'rgba(255, 107, 157, 0.4)');
+          gradient.addColorStop(1, 'rgba(255, 107, 157, 0)');
+          
+          ctx.fillStyle = gradient;
+          ctx.beginPath();
+          ctx.arc(x, y, 80, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.restore();
+        break;
+        
+      case 'Black Hole Region':
+        // Draw gravitational distortion effect
+        ctx.save();
+        ctx.globalAlpha = 0.6;
+        const distortionRadius = 150 + Math.sin(time * 2) * 20;
+        const gradient = ctx.createRadialGradient(camX, camY, 0, camX, camY, distortionRadius);
+        gradient.addColorStop(0, 'rgba(44, 0, 62, 0.8)');
+        gradient.addColorStop(0.7, 'rgba(44, 0, 62, 0.3)');
+        gradient.addColorStop(1, 'rgba(44, 0, 62, 0)');
+        
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.arc(camX, camY, distortionRadius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+        break;
+        
+      case 'Stellar Nursery':
+        // Draw energy wisps and radiation
+        ctx.save();
+        ctx.globalAlpha = 0.4;
+        for (let i = 0; i < 8; i++) {
+          const angle = time * 0.5 + i * (Math.PI * 2 / 8);
+          const radius = 80 + Math.sin(time * 2 + i) * 40;
+          const x = camX + Math.cos(angle) * radius;
+          const y = camY + Math.sin(angle) * radius;
+          
+          ctx.fillStyle = '#FFD700';
+          ctx.shadowColor = '#FFD700';
+          ctx.shadowBlur = 15;
+          ctx.beginPath();
+          ctx.arc(x, y, 3, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.restore();
+        break;
+    }
+  }
+
   // Main render loop
   function render() {
     requestAnimationFrame(render);
@@ -1150,6 +1381,9 @@
     
     // Draw stars
     drawStars(camX, camY);
+    
+    // Draw biome-specific environmental effects
+    drawBiomeEffects(camX, camY);
     
     // Draw supernova effects
     const nowEvt = performance.now();
