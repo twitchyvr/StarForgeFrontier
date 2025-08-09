@@ -142,6 +142,34 @@
     }
   });
 
+  // Check authentication on load
+  const playerId = localStorage.getItem('playerId');
+  const username = localStorage.getItem('username');
+  const isGuest = localStorage.getItem('isGuest') === 'true';
+  
+  if (!playerId) {
+    window.location.href = '/auth.html';
+    return;
+  }
+
+  // Send authentication message immediately after connection
+  ws.onopen = () => {
+    if (isGuest) {
+      // Create a temporary guest player
+      ws.send(JSON.stringify({
+        type: 'authenticate',
+        playerId: playerId,
+        isGuest: true,
+        username: username
+      }));
+    } else {
+      ws.send(JSON.stringify({
+        type: 'authenticate',
+        playerId: playerId
+      }));
+    }
+  };
+
   // WebSocket message handling
   ws.onmessage = (ev) => {
     let msg;
@@ -184,6 +212,16 @@
       if (msg.event && msg.event.type === 'supernova') {
         handleSupernova(msg.event);
       }
+    } else if (msg.type === 'achievements') {
+      handleAchievements(msg.achievements);
+    } else if (msg.type === 'error') {
+      showNotification(msg.message, 'error');
+      if (msg.message.includes('Authentication')) {
+        localStorage.clear();
+        window.location.href = '/auth.html';
+      }
+    } else if (msg.type === 'player_join') {
+      showNotification(`${msg.player.username} joined the galaxy`, 'info', 2000);
     }
   };
 
@@ -213,6 +251,14 @@
   function updatePlayerCount() {
     const count = Object.keys(players).length;
     playerCountEl.textContent = count;
+  }
+
+  // Handle achievements
+  function handleAchievements(achievements) {
+    achievements.forEach(achievement => {
+      showNotification(`🏆 Achievement Unlocked: ${achievement.name}`, 'success', 4000);
+      triggerShake(12, 400);
+    });
   }
 
   // Handle supernova events
