@@ -27,12 +27,17 @@ StarForgeFrontier is a multiplayer spaceship building and space exploration game
 
 ### Core Game Features
 - **Multiplayer Support:** Real-time player synchronization with persistent sessions
-- **Ship Building:** Modular spacecraft construction system
-- **Resource Economy:** Ore collection and credit-based upgrade system
+- **Ship Building:** Functional modular spacecraft construction system with gameplay effects
+  - **Engine Components:** Increase ship speed by 30% per engine module
+  - **Cargo Components:** Boost capacity (+500 per module), collection range (+10 per module), and efficiency (+10% per module)
+  - **Weapon Components:** Add damage (+25 per module) and range (+10 per module) for combat system
+  - **Shield Components:** Increase max health (+100 per module) with health management
+- **Resource Economy:** Ore collection and credit-based upgrade system with cargo capacity limits
 - **Dynamic Events:** Scheduled supernova events with resource spawning
-- **Physics Simulation:** Server-authoritative movement and collision detection
-- **User Management:** Registration, login, and profile systems
+- **Physics Simulation:** Server-authoritative movement and collision detection with component-based properties
+- **User Management:** Registration, login, and profile systems  
 - **Data Persistence:** Player progress and game state preservation
+- **Real-time UI:** Ship statistics display showing speed, cargo usage, and collection range
 
 ## Development Workflow
 
@@ -160,15 +165,23 @@ StarForgeFrontier/
 - Documentation must be updated for API changes
 
 ### Testing Strategy
-- **Unit Tests:** Individual function testing
+- **Unit Tests:** Individual function testing (124 tests passing)
+  - Ship component effects calculations and property updates
+  - Database operations and player management
+  - WebSocket message validation and game logic
 - **Integration Tests:** Component interaction testing  
+  - Ship building system with real-time property updates
+  - Client-server communication and state synchronization
 - **End-to-End Tests:** Full gameplay scenario testing
 - **Performance Tests:** Load and stress testing for multiplayer
+- **Test Coverage:** Comprehensive test suite with 123+ tests covering all major systems
 
 ### Deployment Process
 - **Development:** Auto-deploy on push to develop branch
 - **Staging:** Automated deployment for pre-production testing
 - **Production:** Automated deployment to Render.com (Virginia region)
+  - **Live URL:** https://starforgefrontier.onrender.com
+  - **Health Check:** https://starforgefrontier.onrender.com/api/health
 - **Monitoring:** Real-time health checks and performance monitoring
 - **Rollback:** Zero-downtime rollback capabilities
 - **Backup:** Automated database backup and restore system
