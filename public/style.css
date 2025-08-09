@@ -73,6 +73,7 @@ html, body {
 .quick-actions {
   display: flex;
   gap: 10px;
+  flex-wrap: wrap;
 }
 
 /* Combat stats section */
@@ -155,6 +156,18 @@ html, body {
 
 .btn-text {
   font-weight: 500;
+}
+
+/* Ship Editor specific button styling */
+#shipEditorToggle {
+  background: linear-gradient(135deg, #9013fe, #bd10e0);
+  border-color: rgba(144, 19, 254, 0.6);
+}
+
+#shipEditorToggle:hover {
+  background: linear-gradient(135deg, #bd10e0, #e91e63);
+  border-color: rgba(189, 16, 224, 0.8);
+  box-shadow: 0 4px 20px rgba(144, 19, 254, 0.4);
 }
 
 /* Minimap */
