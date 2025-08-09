@@ -24,6 +24,58 @@
   const addEngineBtn = document.getElementById('addEngine');
   const addCargoBtn = document.getElementById('addCargo');
 
+  // Shop UI elements will be created dynamically.  When the player
+  // clicks the shop button, a list of available items appears with
+  // purchase buttons.  The items list is provided by the server.
+  let shopItems = {};
+  let shopVisible = false;
+  const shopBtn = document.createElement('button');
+  shopBtn.textContent = 'Shop';
+  shopBtn.style.marginLeft = '8px';
+  const shopPanel = document.createElement('div');
+  shopPanel.style.position = 'absolute';
+  shopPanel.style.top = '50px';
+  shopPanel.style.right = '20px';
+  shopPanel.style.background = 'rgba(0,0,0,0.8)';
+  shopPanel.style.padding = '10px';
+  shopPanel.style.borderRadius = '4px';
+  shopPanel.style.display = 'none';
+  shopPanel.style.color = '#fff';
+  shopPanel.style.zIndex = 10;
+  document.body.appendChild(shopPanel);
+  // Toggle shop visibility
+  shopBtn.addEventListener('click', () => {
+    shopVisible = !shopVisible;
+    shopPanel.style.display = shopVisible ? 'block' : 'none';
+    if (shopVisible) {
+      renderShop();
+    }
+  });
+  // Insert shop button into HUD after cargo button
+  addCargoBtn.parentNode.insertBefore(shopBtn, addCargoBtn.nextSibling);
+
+  function renderShop() {
+    // Clear existing content
+    shopPanel.innerHTML = '<strong>Shop</strong><br/>';
+    Object.keys(shopItems).forEach(key => {
+      const item = shopItems[key];
+      const row = document.createElement('div');
+      row.style.marginTop = '4px';
+      const btn = document.createElement('button');
+      btn.textContent = `Buy ${key} (${item.cost})`;
+      btn.style.marginLeft = '4px';
+      btn.addEventListener('click', () => {
+        // send buy request to server
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'buy', itemId: key }));
+        }
+      });
+      row.append(`${key}: ${item.cost}`);
+      row.appendChild(btn);
+      shopPanel.appendChild(row);
+    });
+  }
+
   // WebSocket connection
   const wsProtocol = location.protocol === 'https:' ? 'wss' : 'ws';
   const ws = new WebSocket(`${wsProtocol}://${location.host}`);
@@ -224,6 +276,10 @@
       players = {};
       msg.players.forEach(p => { players[p.id] = p; });
       ores = msg.ores;
+      // receive shop items from server
+      if (msg.items) {
+        shopItems = msg.items;
+      }
     } else if (msg.type === 'update') {
       players = {};
       msg.players.forEach(p => {
@@ -378,8 +434,9 @@
       });
     });
     ctx.restore();
-    // Update HUD
-    resourcesEl.textContent = `Resources: ${myResources}`;
+    // Update HUD with resources and level if available
+    const level = players[myId] ? players[myId].level : 1;
+    resourcesEl.textContent = `Resources: ${myResources} (Level: ${level})`;
   }
 
   render();

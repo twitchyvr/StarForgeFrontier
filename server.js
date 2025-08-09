@@ -32,9 +32,15 @@ let ores = [];
 // Game constants
 const STARTING_RESOURCES = 100;
 const ORE_VALUE = 25;
-const MODULE_COSTS = {
-  engine: 50,
-  cargo: 30
+
+// Define purchasable items for the in‑game economy.  Each entry
+// describes the cost in resources and the type of item.  Additional
+// item types (e.g. weapons, shields) can easily be added here.
+const ITEMS = {
+  engine: { cost: 50, type: 'module', id: 'engine' },
+  cargo:  { cost: 30, type: 'module', id: 'cargo' },
+  weapon: { cost: 70, type: 'module', id: 'weapon' },
+  shield: { cost: 60, type: 'module', id: 'shield' }
 };
 
 // Utility to broadcast JSON data to all clients
@@ -75,7 +81,8 @@ function broadcastState() {
       x: p.x,
       y: p.y,
       modules: p.modules,
-      resources: p.resources
+      resources: p.resources,
+      level: p.level
     })),
     ores
   };
@@ -96,11 +103,18 @@ wss.on('connection', (ws) => {
     // Input state
     inputs: { up: false, down: false, left: false, right: false },
     resources: STARTING_RESOURCES
+    ,level: 1
   };
   players.set(id, player);
 
-  // Send initial state to the connecting client
-  ws.send(JSON.stringify({ type: 'init', id, players: Array.from(players.values()), ores }));
+  // Send initial state to the connecting client including item catalogue
+  ws.send(JSON.stringify({
+    type: 'init',
+    id,
+    players: Array.from(players.values()),
+    ores,
+    items: ITEMS
+  }));
 
   // Attach player id to websocket for convenience
   ws.playerId = id;
@@ -126,11 +140,27 @@ wss.on('connection', (ws) => {
     } else if (data.type === 'build') {
       // Attempt to add a module to the ship
       const mod = data.module;
-      const cost = MODULE_COSTS[mod.id] || 0;
-      if (p.resources >= cost) {
+      const item = ITEMS[mod.id];
+      const cost = item ? item.cost : 0;
+      if (item && item.type === 'module' && p.resources >= cost) {
         p.resources -= cost;
+        // Append the module to the ship at the specified offset
         p.modules.push(mod);
-        // Inform only this player of their resource change
+        // Notify this player of their new resource total
+        ws.send(JSON.stringify({ type: 'resources', resources: p.resources }));
+      }
+    } else if (data.type === 'buy') {
+      // Generic buy action: purchase an item from the shop
+      const item = ITEMS[data.itemId];
+      if (item && p.resources >= item.cost) {
+        p.resources -= item.cost;
+        // Apply item effect
+        if (item.type === 'module') {
+          // Determine offset for new module relative to existing modules
+          const offset = p.modules.length * 22;
+          p.modules.push({ id: item.id, x: offset, y: 0 });
+        }
+        // Update resources back to client
         ws.send(JSON.stringify({ type: 'resources', resources: p.resources }));
       }
     }
@@ -162,6 +192,9 @@ setInterval(() => {
       const distSq = dx * dx + dy * dy;
       if (distSq < 40 * 40) { // within 40px radius
         p.resources += ore.value;
+        // Increase player level based on total resources collected.  Level
+        // increases every 200 resources.
+        p.level = 1 + Math.floor(p.resources / 200);
         removeOre(ore.id);
       }
     });
