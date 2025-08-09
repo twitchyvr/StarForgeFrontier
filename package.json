@@ -4,7 +4,7 @@
   "description": "A multiplayer spaceship building and space exploration game with full physics, upgrades and an engaging in‑game economy.",
   "main": "server-enhanced.js",
   "scripts": {
-    "start": "node server-optimized.js",
+    "start": "node server-enhanced.js",
     "start:basic": "node server-enhanced.js",
     "start:optimized": "node server-optimized.js",
     "dev": "NODE_ENV=development node server.js",
