@@ -553,6 +553,206 @@ class Database {
         is_active BOOLEAN DEFAULT 1,
         UNIQUE(player_id, certification_type, certification_name),
         FOREIGN KEY (player_id) REFERENCES players (id)
+      )`,
+
+      // ===== GUILD SYSTEM TABLES =====
+
+      // Guilds table
+      `CREATE TABLE IF NOT EXISTS guilds (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL UNIQUE,
+        tag TEXT NOT NULL UNIQUE,
+        description TEXT DEFAULT '',
+        founder_id TEXT NOT NULL,
+        founded_at INTEGER NOT NULL,
+        config TEXT NOT NULL, -- JSON data for guild configuration
+        resources TEXT NOT NULL, -- JSON data for guild resources
+        stats TEXT NOT NULL, -- JSON data for guild statistics
+        territories TEXT NOT NULL, -- JSON array of controlled territories
+        guild_halls TEXT NOT NULL, -- JSON array of guild hall IDs
+        allies TEXT NOT NULL, -- JSON array of allied guild IDs
+        enemies TEXT NOT NULL, -- JSON array of enemy guild IDs
+        neutral TEXT NOT NULL, -- JSON array of neutral guild IDs
+        active_perks TEXT NOT NULL, -- JSON array of active perk IDs
+        unlocked_perks TEXT NOT NULL, -- JSON array of unlocked perk IDs
+        is_active BOOLEAN DEFAULT 1,
+        disbanded_at INTEGER,
+        updated_at INTEGER NOT NULL,
+        FOREIGN KEY (founder_id) REFERENCES players (id)
+      )`,
+
+      // Guild members table
+      `CREATE TABLE IF NOT EXISTS guild_members (
+        player_id TEXT NOT NULL,
+        guild_id TEXT NOT NULL,
+        role_id TEXT NOT NULL,
+        joined_at INTEGER NOT NULL,
+        contribution_points INTEGER DEFAULT 0,
+        last_active INTEGER DEFAULT (strftime('%s', 'now') * 1000),
+        PRIMARY KEY (player_id, guild_id),
+        FOREIGN KEY (player_id) REFERENCES players (id),
+        FOREIGN KEY (guild_id) REFERENCES guilds (id)
+      )`,
+
+      // Guild roles table
+      `CREATE TABLE IF NOT EXISTS guild_roles (
+        guild_id TEXT NOT NULL,
+        role_id TEXT NOT NULL,
+        role_name TEXT NOT NULL,
+        priority INTEGER NOT NULL, -- Lower number = higher priority
+        permissions TEXT NOT NULL, -- JSON array of permissions
+        color TEXT NOT NULL,
+        is_default BOOLEAN DEFAULT 0,
+        max_members INTEGER DEFAULT -1, -- -1 for unlimited
+        PRIMARY KEY (guild_id, role_id),
+        FOREIGN KEY (guild_id) REFERENCES guilds (id)
+      )`,
+
+      // Guild halls table
+      `CREATE TABLE IF NOT EXISTS guild_halls (
+        id TEXT PRIMARY KEY,
+        guild_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        sector_x INTEGER NOT NULL,
+        sector_y INTEGER NOT NULL,
+        x REAL NOT NULL,
+        y REAL NOT NULL,
+        level INTEGER DEFAULT 1,
+        hall_type TEXT DEFAULT 'BASIC',
+        is_active BOOLEAN DEFAULT 1,
+        construction_progress REAL DEFAULT 100,
+        construction_started INTEGER NOT NULL,
+        construction_completed INTEGER,
+        facilities TEXT NOT NULL, -- JSON data for facilities
+        maintenance_cost INTEGER DEFAULT 100,
+        last_maintenance INTEGER DEFAULT (strftime('%s', 'now') * 1000),
+        power_level INTEGER DEFAULT 100,
+        defense_level INTEGER DEFAULT 50,
+        upgrades TEXT NOT NULL, -- JSON array of upgrades
+        active_modules TEXT NOT NULL, -- JSON array of active modules
+        stored_resources TEXT NOT NULL, -- JSON data for stored resources
+        access_level TEXT DEFAULT 'MEMBERS',
+        is_public BOOLEAN DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        FOREIGN KEY (guild_id) REFERENCES guilds (id)
+      )`,
+
+      // Guild applications table
+      `CREATE TABLE IF NOT EXISTS guild_applications (
+        id TEXT PRIMARY KEY,
+        player_id TEXT NOT NULL,
+        guild_id TEXT NOT NULL,
+        message TEXT DEFAULT '',
+        status TEXT DEFAULT 'pending', -- 'pending', 'accepted', 'rejected'
+        applied_at INTEGER NOT NULL,
+        processed_by TEXT,
+        processed_at INTEGER,
+        FOREIGN KEY (player_id) REFERENCES players (id),
+        FOREIGN KEY (guild_id) REFERENCES guilds (id),
+        FOREIGN KEY (processed_by) REFERENCES players (id)
+      )`,
+
+      // Guild resource transactions
+      `CREATE TABLE IF NOT EXISTS guild_resource_transactions (
+        id TEXT PRIMARY KEY,
+        guild_id TEXT NOT NULL,
+        player_id TEXT,
+        transaction_type TEXT NOT NULL, -- 'deposit', 'withdraw'
+        resource_type TEXT NOT NULL,
+        amount TEXT NOT NULL, -- JSON data for amount (supports different resource types)
+        timestamp INTEGER NOT NULL,
+        FOREIGN KEY (guild_id) REFERENCES guilds (id),
+        FOREIGN KEY (player_id) REFERENCES players (id)
+      )`,
+
+      // Guild relations (diplomacy)
+      `CREATE TABLE IF NOT EXISTS guild_relations (
+        guild_id TEXT NOT NULL,
+        target_guild_id TEXT NOT NULL,
+        relation_type TEXT NOT NULL, -- 'ALLY', 'ENEMY', 'NEUTRAL'
+        established_at INTEGER NOT NULL,
+        established_by TEXT,
+        notes TEXT DEFAULT '',
+        PRIMARY KEY (guild_id, target_guild_id),
+        FOREIGN KEY (guild_id) REFERENCES guilds (id),
+        FOREIGN KEY (target_guild_id) REFERENCES guilds (id),
+        FOREIGN KEY (established_by) REFERENCES players (id)
+      )`,
+
+      // Guild perks
+      `CREATE TABLE IF NOT EXISTS guild_perks (
+        guild_id TEXT NOT NULL,
+        perk_id TEXT NOT NULL,
+        activated_at INTEGER NOT NULL,
+        cost_paid INTEGER NOT NULL,
+        is_active BOOLEAN DEFAULT 1,
+        PRIMARY KEY (guild_id, perk_id),
+        FOREIGN KEY (guild_id) REFERENCES guilds (id)
+      )`,
+
+      // Guild events and activity log
+      `CREATE TABLE IF NOT EXISTS guild_events (
+        id TEXT PRIMARY KEY,
+        guild_id TEXT NOT NULL,
+        event_type TEXT NOT NULL,
+        player_id TEXT,
+        target_player_id TEXT,
+        data TEXT, -- JSON data for event-specific information
+        timestamp INTEGER NOT NULL,
+        FOREIGN KEY (guild_id) REFERENCES guilds (id),
+        FOREIGN KEY (player_id) REFERENCES players (id),
+        FOREIGN KEY (target_player_id) REFERENCES players (id)
+      )`,
+
+      // Guild wars and conflicts
+      `CREATE TABLE IF NOT EXISTS guild_wars (
+        id TEXT PRIMARY KEY,
+        attacker_guild_id TEXT NOT NULL,
+        defender_guild_id TEXT NOT NULL,
+        war_type TEXT DEFAULT 'TERRITORY', -- 'TERRITORY', 'RESOURCES', 'HONOR'
+        status TEXT DEFAULT 'ACTIVE', -- 'DECLARED', 'ACTIVE', 'ENDED'
+        declared_at INTEGER NOT NULL,
+        declared_by TEXT NOT NULL,
+        started_at INTEGER,
+        ended_at INTEGER,
+        victor_guild_id TEXT,
+        casualties TEXT, -- JSON data for war casualties
+        objectives TEXT, -- JSON data for war objectives
+        FOREIGN KEY (attacker_guild_id) REFERENCES guilds (id),
+        FOREIGN KEY (defender_guild_id) REFERENCES guilds (id),
+        FOREIGN KEY (declared_by) REFERENCES players (id),
+        FOREIGN KEY (victor_guild_id) REFERENCES guilds (id)
+      )`,
+
+      // Guild war battles
+      `CREATE TABLE IF NOT EXISTS guild_war_battles (
+        id TEXT PRIMARY KEY,
+        war_id TEXT NOT NULL,
+        sector_x INTEGER NOT NULL,
+        sector_y INTEGER NOT NULL,
+        attacker_players TEXT NOT NULL, -- JSON array of player IDs
+        defender_players TEXT NOT NULL, -- JSON array of player IDs
+        victor TEXT, -- 'ATTACKER' or 'DEFENDER'
+        battle_data TEXT, -- JSON data for battle results
+        started_at INTEGER NOT NULL,
+        ended_at INTEGER,
+        FOREIGN KEY (war_id) REFERENCES guild_wars (id)
+      )`,
+
+      // Guild territories
+      `CREATE TABLE IF NOT EXISTS guild_territories (
+        guild_id TEXT NOT NULL,
+        sector_x INTEGER NOT NULL,
+        sector_y INTEGER NOT NULL,
+        control_level REAL DEFAULT 1.0, -- 0.0 to 1.0
+        claimed_at INTEGER NOT NULL,
+        claimed_by TEXT NOT NULL,
+        last_contested INTEGER,
+        defense_structures TEXT, -- JSON array of defense structures
+        PRIMARY KEY (guild_id, sector_x, sector_y),
+        FOREIGN KEY (guild_id) REFERENCES guilds (id),
+        FOREIGN KEY (claimed_by) REFERENCES players (id)
       )`
     ];
 

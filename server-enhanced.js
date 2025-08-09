@@ -23,6 +23,7 @@ const MarketSystem = require('./trading/MarketSystem');
 const { ContractSystem } = require('./trading/ContractSystem');
 const { FactionOrchestrator } = require('./factions/FactionOrchestrator');
 const SkillSystem = require('./skills/SkillSystem');
+const GuildSystem = require('./guilds/GuildSystem');
 
 const app = express();
 const server = http.createServer(app);
@@ -49,6 +50,9 @@ let factionOrchestrator = null;
 
 // Initialize skill system
 let skillSystem = null;
+
+// Initialize guild system
+let guildSystem = null;
 
 // In-memory state for active gameplay
 const activePlayers = new Map(); // WebSocket connections
@@ -246,6 +250,11 @@ async function initializeServer() {
     // Initialize skill system
     skillSystem = new SkillSystem(db);
     console.log('Skill system initialized successfully');
+    
+    // Initialize guild system
+    guildSystem = new GuildSystem(db, skillSystem, factionOrchestrator);
+    await guildSystem.initialize();
+    console.log('Guild system initialized successfully');
     
     // Initialize starting trading stations
     await initializeStartingTradingStations();
@@ -1603,6 +1612,379 @@ function handlePlayerRespawn(ws, player) {
     invulnerableUntil: player.invulnerableUntil
   }));
 }
+
+// ===== GUILD SYSTEM API ENDPOINTS =====
+
+// Get player's guild
+app.get('/api/guild/my-guild', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ message: 'No token provided' });
+    }
+
+    const token = authHeader.substring(7);
+    const playerId = await validateToken(token);
+    if (!playerId) {
+      return res.status(401).json({ message: 'Invalid token' });
+    }
+
+    const guild = guildSystem.getPlayerGuild(playerId);
+    if (!guild) {
+      return res.status(404).json({ message: 'Player is not in a guild' });
+    }
+
+    const guildData = guild.getFullData();
+    const members = Array.from(guild.members.values());
+    
+    res.json({
+      success: true,
+      guild: guildData,
+      members: members,
+      playerRole: guild.members.get(playerId)?.roleId
+    });
+  } catch (error) {
+    console.error('Error getting player guild:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// Create a new guild
+app.post('/api/guild/create', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ message: 'No token provided' });
+    }
+
+    const token = authHeader.substring(7);
+    const playerId = await validateToken(token);
+    if (!playerId) {
+      return res.status(401).json({ message: 'Invalid token' });
+    }
+
+    const { name, tag, description, guildType, maxMembers, recruitmentOpen, requiresApplication } = req.body;
+    
+    const guild = await guildSystem.createGuild(playerId, name, tag, {
+      description,
+      guildType,
+      maxMembers,
+      recruitmentOpen,
+      requiresApplication
+    });
+
+    res.json({
+      success: true,
+      guild: guild.getSummary()
+    });
+  } catch (error) {
+    console.error('Error creating guild:', error);
+    res.status(400).json({ message: error.message });
+  }
+});
+
+// Search guilds
+app.get('/api/guild/search', async (req, res) => {
+  try {
+    const criteria = {
+      name: req.query.name,
+      tag: req.query.tag,
+      guildType: req.query.guildType,
+      recruitmentOpen: req.query.recruitmentOpen === 'true',
+      minLevel: parseInt(req.query.minLevel),
+      maxLevel: parseInt(req.query.maxLevel),
+      limit: parseInt(req.query.limit) || 20
+    };
+
+    const guilds = await guildSystem.searchGuilds(criteria);
+    
+    res.json({
+      success: true,
+      guilds: guilds
+    });
+  } catch (error) {
+    console.error('Error searching guilds:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// Apply to join a guild
+app.post('/api/guild/:guildId/apply', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ message: 'No token provided' });
+    }
+
+    const token = authHeader.substring(7);
+    const playerId = await validateToken(token);
+    if (!playerId) {
+      return res.status(401).json({ message: 'Invalid token' });
+    }
+
+    const { guildId } = req.params;
+    const { message } = req.body;
+
+    const result = await guildSystem.applyToGuild(playerId, guildId, message);
+    
+    res.json({
+      success: true,
+      status: result.status,
+      applicationId: result.applicationId
+    });
+  } catch (error) {
+    console.error('Error applying to guild:', error);
+    res.status(400).json({ message: error.message });
+  }
+});
+
+// Get guild members
+app.get('/api/guild/:guildId/members', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ message: 'No token provided' });
+    }
+
+    const token = authHeader.substring(7);
+    const playerId = await validateToken(token);
+    if (!playerId) {
+      return res.status(401).json({ message: 'Invalid token' });
+    }
+
+    const { guildId } = req.params;
+    const guild = guildSystem.getGuild(guildId);
+    
+    if (!guild) {
+      return res.status(404).json({ message: 'Guild not found' });
+    }
+
+    // Check if player is a member
+    if (!guild.members.has(playerId)) {
+      return res.status(403).json({ message: 'Not a guild member' });
+    }
+
+    const members = [];
+    for (const [memberId, member] of guild.members.entries()) {
+      const playerData = await db.getPlayerData(memberId);
+      if (playerData) {
+        const role = guild.roles.get(member.roleId);
+        members.push({
+          playerId: memberId,
+          username: playerData.username,
+          roleId: member.roleId,
+          roleName: role?.name || 'Unknown',
+          contributionPoints: member.contributionPoints,
+          joinedAt: member.joinedAt,
+          lastActive: member.lastActive,
+          isOnline: activePlayers.has(memberId)
+        });
+      }
+    }
+
+    res.json({
+      success: true,
+      members: members
+    });
+  } catch (error) {
+    console.error('Error getting guild members:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// Leave guild
+app.post('/api/guild/leave', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ message: 'No token provided' });
+    }
+
+    const token = authHeader.substring(7);
+    const playerId = await validateToken(token);
+    if (!playerId) {
+      return res.status(401).json({ message: 'Invalid token' });
+    }
+
+    const result = await guildSystem.leaveGuild(playerId);
+    
+    res.json({
+      success: true,
+      message: `You have left ${result.formerGuild}`
+    });
+  } catch (error) {
+    console.error('Error leaving guild:', error);
+    res.status(400).json({ message: error.message });
+  }
+});
+
+// Kick member from guild
+app.post('/api/guild/kick/:targetPlayerId', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ message: 'No token provided' });
+    }
+
+    const token = authHeader.substring(7);
+    const kickerId = await validateToken(token);
+    if (!kickerId) {
+      return res.status(401).json({ message: 'Invalid token' });
+    }
+
+    const { targetPlayerId } = req.params;
+    const { reason } = req.body;
+
+    const result = await guildSystem.kickMember(kickerId, targetPlayerId, reason);
+    
+    res.json({
+      success: true,
+      message: 'Member kicked successfully'
+    });
+  } catch (error) {
+    console.error('Error kicking member:', error);
+    res.status(400).json({ message: error.message });
+  }
+});
+
+// Change member role
+app.post('/api/guild/role/:targetPlayerId', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ message: 'No token provided' });
+    }
+
+    const token = authHeader.substring(7);
+    const changerId = await validateToken(token);
+    if (!changerId) {
+      return res.status(401).json({ message: 'Invalid token' });
+    }
+
+    const { targetPlayerId } = req.params;
+    const { newRoleId } = req.body;
+
+    const result = await guildSystem.changeMemberRole(changerId, targetPlayerId, newRoleId);
+    
+    res.json({
+      success: true,
+      newRole: result.newRole
+    });
+  } catch (error) {
+    console.error('Error changing member role:', error);
+    res.status(400).json({ message: error.message });
+  }
+});
+
+// Get guild events
+app.get('/api/guild/:guildId/events', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ message: 'No token provided' });
+    }
+
+    const token = authHeader.substring(7);
+    const playerId = await validateToken(token);
+    if (!playerId) {
+      return res.status(401).json({ message: 'Invalid token' });
+    }
+
+    const { guildId } = req.params;
+    const limit = parseInt(req.query.limit) || 50;
+    
+    const guild = guildSystem.getGuild(guildId);
+    if (!guild || !guild.members.has(playerId)) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    const events = await guildSystem.getGuildEvents(guildId, limit);
+    
+    res.json({
+      success: true,
+      events: events
+    });
+  } catch (error) {
+    console.error('Error getting guild events:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// Contribute resources to guild
+app.post('/api/guild/contribute', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ message: 'No token provided' });
+    }
+
+    const token = authHeader.substring(7);
+    const playerId = await validateToken(token);
+    if (!playerId) {
+      return res.status(401).json({ message: 'Invalid token' });
+    }
+
+    const { resourceType, amount } = req.body;
+
+    const result = await guildSystem.contributeResources(playerId, resourceType, amount);
+    
+    res.json({
+      success: true,
+      resources: result.resources,
+      levelUp: result.levelUp
+    });
+  } catch (error) {
+    console.error('Error contributing resources:', error);
+    res.status(400).json({ message: error.message });
+  }
+});
+
+// Set diplomatic relations
+app.post('/api/guild/diplomacy/:targetGuildId', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ message: 'No token provided' });
+    }
+
+    const token = authHeader.substring(7);
+    const playerId = await validateToken(token);
+    if (!playerId) {
+      return res.status(401).json({ message: 'Invalid token' });
+    }
+
+    const { targetGuildId } = req.params;
+    const { relationType } = req.body;
+
+    const result = await guildSystem.setGuildRelation(playerId, targetGuildId, relationType);
+    
+    res.json({
+      success: true,
+      relation: result.relation
+    });
+  } catch (error) {
+    console.error('Error setting guild relation:', error);
+    res.status(400).json({ message: error.message });
+  }
+});
+
+// Get guild leaderboard
+app.get('/api/guild/leaderboard', async (req, res) => {
+  try {
+    const category = req.query.category || 'level';
+    const limit = parseInt(req.query.limit) || 10;
+
+    const leaderboard = await guildSystem.getGuildLeaderboard(category, limit);
+    
+    res.json({
+      success: true,
+      leaderboard: leaderboard
+    });
+  } catch (error) {
+    console.error('Error getting guild leaderboard:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
 
 // WebSocket connection handling
 wss.on('connection', async (ws) => {

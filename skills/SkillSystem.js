@@ -469,9 +469,9 @@ class SkillSystem {
   }
 
   /**
-   * Calculate skill effects for a player
+   * Calculate skill effects for a player (including guild bonuses)
    */
-  async calculatePlayerSkillEffects(playerId) {
+  async calculatePlayerSkillEffects(playerId, guildSystem = null) {
     const playerSkills = await this.getPlayerSkills(playerId);
     const effects = {};
 
@@ -506,7 +506,45 @@ class SkillSystem {
       }
     }
 
+    // Add guild bonuses if guild system is available
+    if (guildSystem) {
+      try {
+        const guildBonuses = await guildSystem.getMemberBonuses(playerId);
+        for (const [bonusName, bonusValue] of Object.entries(guildBonuses)) {
+          // Map guild bonus names to skill effect names
+          const mappedEffects = this.mapGuildBonusesToSkillEffects(bonusName, bonusValue);
+          for (const [effectName, effectValue] of Object.entries(mappedEffects)) {
+            if (!effects[effectName]) {
+              effects[effectName] = { value: effectValue, type: 'multiplicative' };
+            } else {
+              // Apply guild bonuses multiplicatively
+              effects[effectName].value = (1 + effects[effectName].value) * (1 + effectValue) - 1;
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error applying guild bonuses:', error);
+      }
+    }
+
     return effects;
+  }
+
+  /**
+   * Map guild bonus names to skill effect names
+   */
+  mapGuildBonusesToSkillEffects(bonusName, bonusValue) {
+    const mapping = {
+      'experience_gain': { 'experience_gain_bonus': bonusValue },
+      'resource_gain': { 'profit_margin_bonus': bonusValue, 'ore_detection_bonus': bonusValue },
+      'trading_bonus': { 'buy_price_reduction': bonusValue, 'sell_price_bonus': bonusValue },
+      'combat_bonus': { 'weapon_damage_bonus': bonusValue, 'critical_hit_chance': bonusValue * 0.01 },
+      'exploration_bonus': { 'warp_cost_reduction': bonusValue, 'sensor_range_bonus': bonusValue },
+      'leadership_bonus': { 'crew_efficiency': bonusValue, 'ai_ship_efficiency': bonusValue },
+      'contribution_bonus': { 'reputation_gain_bonus': bonusValue }
+    };
+
+    return mapping[bonusName] || {};
   }
 
   /**
