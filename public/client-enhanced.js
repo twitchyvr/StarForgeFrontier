@@ -328,6 +328,11 @@
           }
         };
         
+        // Initialize skill system UI
+        if (typeof SkillSystemUI !== 'undefined') {
+          window.skillSystem = new SkillSystemUI(window.gameClient);
+        }
+        
         // Make galaxy UI, ship editor, trading UI and game functions globally accessible
         window.galaxyUI = galaxyUI;
         window.shipEditor = shipEditor;
@@ -530,6 +535,55 @@
       const warpingPlayer = players[msg.playerId];
       if (warpingPlayer) {
         showNotification(`${warpingPlayer.username || 'Player'} has warped away`, 'info', 2000);
+      }
+      
+    // ===== SKILL SYSTEM MESSAGE HANDLERS =====
+    } else if (msg.type === 'player_skills_data') {
+      // Handle skill data from server
+      if (window.skillSystem) {
+        window.skillSystem.handleSkillData(msg);
+      }
+      
+    } else if (msg.type === 'skill_upgrade_success') {
+      // Handle successful skill upgrade
+      if (window.skillSystem) {
+        window.skillSystem.handleSkillUpgrade({
+          success: true,
+          skillName: msg.skillName,
+          newLevel: msg.newLevel,
+          pointsSpent: msg.pointsSpent
+        });
+      }
+      
+    } else if (msg.type === 'skill_upgrade_error') {
+      // Handle skill upgrade error
+      if (window.skillSystem) {
+        window.skillSystem.handleSkillUpgrade({
+          success: false,
+          error: msg.error
+        });
+      }
+      
+    } else if (msg.type === 'skill_effects_data') {
+      // Handle skill effects data
+      // This could be used to apply visual effects or modify gameplay
+      console.log('Skill effects received:', msg.effects);
+      
+    } else if (msg.type === 'skill_history_data') {
+      // Handle skill history data
+      console.log('Skill history received:', msg.history);
+      
+    } else if (msg.type === 'skill_reset_success') {
+      // Handle successful skill reset
+      if (window.skillSystem) {
+        window.skillSystem.showNotification('All skills have been reset successfully!', 'success');
+        window.skillSystem.refreshSkillData();
+      }
+      
+    } else if (msg.type === 'skill_reset_error') {
+      // Handle skill reset error
+      if (window.skillSystem) {
+        window.skillSystem.showNotification(msg.error, 'error');
       }
     }
   };

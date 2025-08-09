@@ -22,6 +22,7 @@ const { TradingStation } = require('./trading/TradingStation');
 const MarketSystem = require('./trading/MarketSystem');
 const { ContractSystem } = require('./trading/ContractSystem');
 const { FactionOrchestrator } = require('./factions/FactionOrchestrator');
+const SkillSystem = require('./skills/SkillSystem');
 
 const app = express();
 const server = http.createServer(app);
@@ -45,6 +46,9 @@ const tradingStations = new Map(); // Active trading stations by sector
 
 // Initialize faction system
 let factionOrchestrator = null;
+
+// Initialize skill system
+let skillSystem = null;
 
 // In-memory state for active gameplay
 const activePlayers = new Map(); // WebSocket connections
@@ -238,6 +242,10 @@ async function initializeServer() {
     factionOrchestrator = new FactionOrchestrator(db);
     await factionOrchestrator.initialize();
     console.log('Faction system initialized successfully');
+    
+    // Initialize skill system
+    skillSystem = new SkillSystem(db);
+    console.log('Skill system initialized successfully');
     
     // Initialize starting trading stations
     await initializeStartingTradingStations();
@@ -1490,6 +1498,11 @@ async function handlePlayerDestroyed(targetPlayer, shooterPlayer) {
   if (shooterPlayer) {
     shooterPlayer.stats.kills = (shooterPlayer.stats.kills || 0) + 1;
     
+    // Award combat skill points for destroying enemy
+    if (skillSystem) {
+      await skillSystem.awardSkillPoints(shooterPlayer.id, 'enemy_destroyed', 5);
+    }
+    
     // Award resources for kill
     const killReward = 50 + (targetPlayer.level * 25);
     shooterPlayer.resources += killReward;
@@ -1734,6 +1747,11 @@ wss.on('connection', async (ws) => {
         player.modules.push(mod);
         player.stats.totalModulesBuilt += 1;
         
+        // Award engineering skill points for building components
+        if (skillSystem) {
+          await skillSystem.awardSkillPoints(player.id, 'component_installed', 2);
+        }
+        
         // Save to database
         await db.addShipModule(player.id, mod.id, item.type, mod.x, mod.y);
         await db.updatePlayerStats(player.id, { 
@@ -1760,6 +1778,11 @@ wss.on('connection', async (ws) => {
           const newModule = { id: item.id, x: offset, y: 0 };
           player.modules.push(newModule);
           player.stats.totalModulesBuilt += 1;
+          
+          // Award engineering skill points for building components
+          if (skillSystem) {
+            await skillSystem.awardSkillPoints(player.id, 'component_installed', 2);
+          }
           
           // Update ship properties immediately after adding component
           const properties = updateShipProperties(player);
@@ -1888,6 +1911,128 @@ wss.on('connection', async (ws) => {
         ws.send(JSON.stringify({
           type: 'sector_info',
           sector: currentSector.getSectorData()
+        }));
+      }
+      
+    // ===== SKILL SYSTEM HANDLERS =====
+    } else if (data.type === 'get_player_skills') {
+      try {
+        // Get player's current skills and skill points
+        const playerSkills = await skillSystem.getPlayerSkills(data.playerId);
+        
+        // Get detailed progress for each skill tree
+        const treeProgress = {};
+        const skillTrees = skillSystem.getAllSkillTrees();
+        
+        for (const treeName of Object.keys(skillTrees)) {
+          treeProgress[treeName] = await skillSystem.getSkillTreeProgress(data.playerId, treeName);
+        }
+        
+        ws.send(JSON.stringify({
+          type: 'player_skills_data',
+          skills: playerSkills.skills,
+          skillPoints: playerSkills.skillPoints,
+          treeProgress: treeProgress
+        }));
+      } catch (error) {
+        console.error('Error getting player skills:', error);
+        ws.send(JSON.stringify({
+          type: 'error',
+          message: 'Failed to get skill data'
+        }));
+      }
+      
+    } else if (data.type === 'upgrade_skill') {
+      try {
+        const result = await skillSystem.upgradeSkill(data.playerId, data.skillTree, data.skillName);
+        
+        if (result.success) {
+          // Award achievement for first skill upgrade
+          if (result.newLevel === 1) {
+            await db.awardAchievement(data.playerId, 'progression', 'First Skill', 'Upgraded your first skill');
+          }
+          
+          // Award achievement for maxing a skill
+          const skillTree = skillSystem.getSkillTreeInfo(data.skillTree);
+          const skill = skillTree?.skills[data.skillName];
+          if (skill && result.newLevel >= skill.maxLevel) {
+            await db.awardAchievement(data.playerId, 'progression', 'Skill Master', `Maxed out ${skill.name}`);
+          }
+          
+          ws.send(JSON.stringify({
+            type: 'skill_upgrade_success',
+            skillTree: data.skillTree,
+            skillName: data.skillName,
+            newLevel: result.newLevel,
+            pointsSpent: result.pointsSpent
+          }));
+          
+          // Broadcast skill upgrade notification to other players if desired
+          // Could be used for guild notifications, etc.
+        }
+      } catch (error) {
+        console.error('Error upgrading skill:', error);
+        ws.send(JSON.stringify({
+          type: 'skill_upgrade_error',
+          error: error.message
+        }));
+      }
+      
+    } else if (data.type === 'get_skill_effects') {
+      try {
+        const effects = await skillSystem.calculatePlayerSkillEffects(data.playerId);
+        
+        ws.send(JSON.stringify({
+          type: 'skill_effects_data',
+          effects: effects
+        }));
+      } catch (error) {
+        console.error('Error calculating skill effects:', error);
+        ws.send(JSON.stringify({
+          type: 'error',
+          message: 'Failed to calculate skill effects'
+        }));
+      }
+      
+    } else if (data.type === 'get_skill_history') {
+      try {
+        const history = await skillSystem.getSkillHistory(data.playerId, data.limit || 20);
+        
+        ws.send(JSON.stringify({
+          type: 'skill_history_data',
+          history: history
+        }));
+      } catch (error) {
+        console.error('Error getting skill history:', error);
+        ws.send(JSON.stringify({
+          type: 'error',
+          message: 'Failed to get skill history'
+        }));
+      }
+      
+    } else if (data.type === 'reset_skills') {
+      try {
+        if (!data.confirmationCode || data.confirmationCode !== 'RESET_SKILLS_CONFIRMED') {
+          ws.send(JSON.stringify({
+            type: 'skill_reset_error',
+            error: 'Invalid confirmation code'
+          }));
+          return;
+        }
+        
+        const result = await skillSystem.resetPlayerSkills(data.playerId, data.confirmationCode);
+        
+        if (result.success) {
+          ws.send(JSON.stringify({
+            type: 'skill_reset_success',
+            refundedPoints: result.refundedPoints
+          }));
+        }
+      } catch (error) {
+        console.error('Error resetting skills:', error);
+        ws.send(JSON.stringify({
+          type: 'skill_reset_error',
+          error: error.message
         }));
       }
     }
@@ -2104,6 +2249,11 @@ async function updateTradingSystems() {
  */
 async function onSectorDiscovered(playerId, sectorX, sectorY, sectorData) {
   try {
+    // Award exploration skill points for discovering new sectors
+    if (skillSystem) {
+      await skillSystem.awardSkillPoints(playerId, 'sector_discovered', 3);
+    }
+    
     // Spawn trading stations if needed
     await spawnTradingStationsInSector(sectorX, sectorY, sectorData.biome_type, sectorData.seed);
     
@@ -2292,6 +2442,11 @@ function startGameLoop() {
             p.stats.totalResourcesCollected += oreTypeData.value;
             p.level = 1 + Math.floor(p.stats.totalResourcesCollected / 200);
             
+            // Award skill points for exploration and trading activities
+            if (skillSystem) {
+              await skillSystem.awardSkillPoints(p.id, 'ore_collected', 1);
+            }
+            
             // Remove ore from sector
             currentSector.removeOre(ore.id);
             
@@ -2338,6 +2493,11 @@ function startGameLoop() {
             p.resources += collectedAmount;
             p.stats.totalResourcesCollected += ore.value;
             p.level = 1 + Math.floor(p.stats.totalResourcesCollected / 200);
+            
+            // Award skill points for exploration and trading activities
+            if (skillSystem) {
+              await skillSystem.awardSkillPoints(p.id, 'ore_collected', 1);
+            }
             
             // Check for achievements
             const achievements = await checkAchievements(p);

@@ -486,6 +486,73 @@ class Database {
         ships_lost INTEGER,
         started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         ended_at DATETIME
+      )`,
+
+      // ===== SKILL SYSTEM TABLES =====
+
+      // Player skills table
+      `CREATE TABLE IF NOT EXISTS player_skills (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        player_id TEXT NOT NULL,
+        skill_tree TEXT NOT NULL, -- 'combat', 'engineering', 'trading', 'exploration', 'leadership'
+        skill_name TEXT NOT NULL,
+        level INTEGER DEFAULT 1,
+        experience INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(player_id, skill_tree, skill_name),
+        FOREIGN KEY (player_id) REFERENCES players (id)
+      )`,
+
+      // Player skill points table
+      `CREATE TABLE IF NOT EXISTS player_skill_points (
+        player_id TEXT NOT NULL,
+        skill_tree TEXT NOT NULL,
+        available_points INTEGER DEFAULT 0,
+        total_earned INTEGER DEFAULT 0,
+        last_updated DATETIME DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (player_id, skill_tree),
+        FOREIGN KEY (player_id) REFERENCES players (id)
+      )`,
+
+      // Skill events and history
+      `CREATE TABLE IF NOT EXISTS skill_events (
+        id TEXT PRIMARY KEY,
+        player_id TEXT NOT NULL,
+        event_type TEXT NOT NULL, -- 'skill_upgrade', 'skill_reset', 'points_awarded'
+        skill_tree TEXT,
+        skill_name TEXT,
+        old_level INTEGER,
+        new_level INTEGER,
+        skill_points_spent INTEGER DEFAULT 0,
+        data TEXT, -- JSON data for additional event information
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (player_id) REFERENCES players (id)
+      )`,
+
+      // Active skill effects and bonuses
+      `CREATE TABLE IF NOT EXISTS player_skill_effects (
+        player_id TEXT NOT NULL,
+        effect_name TEXT NOT NULL,
+        effect_value REAL NOT NULL,
+        effect_type TEXT NOT NULL, -- 'additive', 'multiplicative', 'unlock'
+        source_skills TEXT NOT NULL, -- JSON array of contributing skills
+        last_calculated DATETIME DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (player_id, effect_name),
+        FOREIGN KEY (player_id) REFERENCES players (id)
+      )`,
+
+      // Skill certifications and unlocks
+      `CREATE TABLE IF NOT EXISTS skill_certifications (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        player_id TEXT NOT NULL,
+        certification_type TEXT NOT NULL, -- 'ship_class', 'component_tier', 'sector_access'
+        certification_name TEXT NOT NULL,
+        required_skills TEXT NOT NULL, -- JSON array of skill requirements
+        unlocked_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        is_active BOOLEAN DEFAULT 1,
+        UNIQUE(player_id, certification_type, certification_name),
+        FOREIGN KEY (player_id) REFERENCES players (id)
       )`
     ];
 
