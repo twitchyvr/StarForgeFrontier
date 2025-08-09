@@ -85,6 +85,11 @@
   let ores = [];
   let myResources = 0;
 
+  // Active world events from server.  When a supernova occurs the
+  // server notifies the client; we store it here for a few seconds
+  // to draw visual feedback such as an expanding ring.
+  const activeEvents = [];
+
   // Camera state
   let zoom = 1;
   let targetZoom = 1;
@@ -293,6 +298,19 @@
       myResources = msg.resources;
     } else if (msg.type === 'player_disconnect') {
       delete players[msg.id];
+    } else if (msg.type === 'event') {
+      // Handle world events sent by the server
+      if (msg.event && msg.event.type === 'supernova') {
+        // Add to active events with timestamp for 10 seconds
+        activeEvents.push({
+          type: 'supernova',
+          x: msg.event.x,
+          y: msg.event.y,
+          startTime: performance.now()
+        });
+        // Trigger screen shake when supernova occurs
+        triggerShake(15, 600);
+      }
     }
   };
 
@@ -396,10 +414,37 @@
     drawStars(camX, camY);
     // Draw procedurally generated planets after stars but before ores
     drawPlanets(camX, camY);
-    // Draw ores
+    // Draw active world events such as supernova shockwaves
+    {
+      const nowEvt = performance.now();
+      for (let i = activeEvents.length - 1; i >= 0; i--) {
+        const ev = activeEvents[i];
+        const dt = nowEvt - ev.startTime;
+        if (dt > 10000) {
+          activeEvents.splice(i, 1);
+          continue;
+        }
+        const t = dt / 10000;
+        const maxRadius = 600;
+        const radius = t * maxRadius;
+        ctx.save();
+        ctx.beginPath();
+        ctx.strokeStyle = `rgba(255, 100, 20, ${1 - t})`;
+        ctx.lineWidth = 4;
+        ctx.arc(ev.x, ev.y, radius, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+    // Draw ores with size variation and highlighting
     ores.forEach(ore => {
-      ctx.beginPath();
-      // Highlight ore if close to player
+      const ox = Math.floor(ore.x);
+      const oy = Math.floor(ore.y);
+      const oreSeed = ((ox * 1000003) ^ (oy * 1000033)) >>> 0;
+      const oreRand = mulberry32(oreSeed);
+      const radius = 5 + oreRand() * 8;
+      const stretch = 0.8 + oreRand() * 0.4;
+      const angle = oreRand() * Math.PI * 2;
       let color = '#e2a516';
       if (self) {
         const dx = self.x - ore.x;
@@ -409,9 +454,14 @@
           color = '#ffd02f';
         }
       }
+      ctx.save();
+      ctx.translate(ore.x, ore.y);
+      ctx.rotate(angle);
+      ctx.beginPath();
       ctx.fillStyle = color;
-      ctx.arc(ore.x, ore.y, 8, 0, Math.PI * 2);
+      ctx.ellipse(0, 0, radius, radius * stretch, 0, 0, Math.PI * 2);
       ctx.fill();
+      ctx.restore();
     });
     // Draw players and their ships using procedural shapes
     Object.values(players).forEach(p => {

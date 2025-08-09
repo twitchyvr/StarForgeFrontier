@@ -29,6 +29,21 @@ app.use(express.static('public'));
 const players = new Map();
 let ores = [];
 
+// Scheduled world events.  Each event has a type, position and a
+// trigger timestamp (milliseconds since epoch).  When the trigger time
+// passes, the server applies the event’s effects and notifies clients.
+let events = [];
+
+// Schedule a supernova event to occur after a delay.  A supernova
+// spawns a burst of high‑value ores at a location and alerts all
+// clients.  After triggering, a new supernova is automatically
+// scheduled at a random future time.
+function scheduleSupernova(delayMs = 3 * 60 * 1000) { // default every 3 minutes
+  const x = Math.random() * 4000 - 2000;
+  const y = Math.random() * 4000 - 2000;
+  events.push({ type: 'supernova', x, y, triggerAt: Date.now() + delayMs });
+}
+
 // Game constants
 const STARTING_RESOURCES = 100;
 const ORE_VALUE = 25;
@@ -203,12 +218,45 @@ setInterval(() => {
   if (ores.length === 0) {
     spawnInitialOres();
   }
+
+  // Handle scheduled events.  When the trigger time passes, apply the
+  // event effects and remove it from the list.  After a supernova
+  // triggers, schedule another one in the future.
+  const now = Date.now();
+  events = events.filter(ev => {
+    if (ev.triggerAt <= now) {
+      if (ev.type === 'supernova') {
+        // spawn a burst of ores around the event position
+        const num = 40;
+        for (let i = 0; i < num; i++) {
+          const angle = Math.random() * Math.PI * 2;
+          const dist = Math.random() * 200;
+          ores.push({
+            id: uuidv4(),
+            x: ev.x + Math.cos(angle) * dist,
+            y: ev.y + Math.sin(angle) * dist,
+            value: ORE_VALUE * 2
+          });
+        }
+        // Inform clients of the supernova event
+        broadcast({ type: 'event', event: { type: 'supernova', x: ev.x, y: ev.y } });
+        // Schedule another supernova after a random delay between 2–5 minutes
+        const delay = (2 + Math.random() * 3) * 60 * 1000;
+        scheduleSupernova(delay);
+      }
+      return false; // remove event
+    }
+    return true;
+  });
   // Broadcast the updated state
   broadcastState();
 }, TICK_INTERVAL);
 
 // Initialise ores on startup
 spawnInitialOres();
+
+// Schedule the first supernova event
+scheduleSupernova();
 
 // Start the HTTP server
 const PORT = process.env.PORT || 3000;
