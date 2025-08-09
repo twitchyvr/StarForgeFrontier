@@ -1,0 +1,135 @@
+name: Feature Request
+description: Suggest an idea or enhancement for StarForgeFrontier
+title: "[FEATURE] "
+labels: ["enhancement", "needs-triage"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting a new feature! Please provide detailed information about your idea to help us understand and evaluate it.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Feature Summary
+      description: A clear and concise description of the feature you'd like to see.
+      placeholder: Briefly describe the feature...
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement
+      description: Is your feature request related to a problem? Please describe.
+      placeholder: I'm always frustrated when...
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: Describe the solution you'd like to see implemented.
+      placeholder: I would like to see...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Game Component
+      description: Which part of the game would this feature affect?
+      options:
+        - Multiplayer/Networking
+        - Ship Building System
+        - Resource/Economy System
+        - Game Physics
+        - User Interface
+        - Combat System
+        - Exploration Features
+        - Visual Effects
+        - Audio/Sound
+        - Performance
+        - Developer Tools
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority Level
+      description: How important is this feature to the game experience?
+      options:
+        - Critical (Core gameplay feature)
+        - High (Significantly improves experience)
+        - Medium (Nice to have enhancement)
+        - Low (Minor improvement)
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternative Solutions
+      description: Describe any alternative solutions or features you've considered.
+      placeholder: Alternatively, we could...
+
+  - type: textarea
+    id: mockups
+    attributes:
+      label: Mockups/Examples
+      description: |
+        If applicable, add mockups, sketches, or examples from other games that demonstrate your idea.
+
+  - type: textarea
+    id: implementation
+    attributes:
+      label: Implementation Ideas
+      description: |
+        If you have technical knowledge, describe how this feature might be implemented.
+        Include any technical considerations or challenges you can think of.
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Feature Scope
+      description: How big of a change would this be?
+      options:
+        - Small (Can be implemented in a few hours)
+        - Medium (Requires a few days of development)
+        - Large (Major feature requiring weeks)
+        - Epic (Fundamental change to game architecture)
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance Criteria
+      description: |
+        How would you know this feature is working correctly? 
+        What specific behaviors or outcomes should it have?
+      placeholder: |
+        - [ ] Feature does X when Y happens
+        - [ ] UI shows Z information
+        - [ ] Performance impact is minimal
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Add any other context, research, or references about the feature request here.
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Pre-submission Checklist
+      options:
+        - label: I have searched for existing feature requests before creating this one
+          required: true
+        - label: This feature aligns with the game's vision and scope
+          required: true
+        - label: I have provided sufficient detail for evaluation
+          required: true
