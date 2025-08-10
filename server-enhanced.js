@@ -24,6 +24,9 @@ const { ContractSystem } = require('./trading/ContractSystem');
 const { FactionOrchestrator } = require('./factions/FactionOrchestrator');
 const SkillSystem = require('./skills/SkillSystem');
 const GuildSystem = require('./guilds/GuildSystem');
+const { HazardSystem } = require('./hazards/HazardSystem');
+const { HazardGenerator } = require('./hazards/HazardGenerator');
+const { HazardEffects } = require('./hazards/HazardEffects');
 
 const app = express();
 const server = http.createServer(app);
@@ -53,6 +56,11 @@ let skillSystem = null;
 
 // Initialize guild system
 let guildSystem = null;
+
+// Initialize hazard systems
+let hazardSystem = null;
+let hazardGenerator = null;
+let hazardEffects = null;
 
 // Initialize research system
 const ResearchSystem = require('./research/ResearchSystem');
@@ -262,6 +270,13 @@ async function initializeServer() {
     guildSystem = new GuildSystem(db, skillSystem, factionOrchestrator);
     await guildSystem.initialize();
     console.log('Guild system initialized successfully');
+    
+    // Initialize hazard systems
+    hazardSystem = new HazardSystem(db);
+    await hazardSystem.initialize();
+    hazardGenerator = new HazardGenerator(sectorManager, db);
+    hazardEffects = new HazardEffects();
+    console.log('Environmental hazard systems initialized successfully');
     
     // Initialize research system
     researchSystem = new ResearchSystem(db, skillSystem, guildSystem);
@@ -2825,6 +2840,236 @@ wss.on('connection', async (ws) => {
           message: error.message
         }));
       }
+      
+    } else if (data.type === 'getEmergencyScenarios') {
+      try {
+        const scenarios = hazardGenerator ? hazardGenerator.getActiveEmergencyScenarios() : [];
+        
+        const callback = data.callback;
+        ws.send(JSON.stringify({
+          type: 'callback',
+          callbackId: callback,
+          success: true,
+          data: { scenarios }
+        }));
+      } catch (error) {
+        console.error('Error getting emergency scenarios:', error);
+        const callback = data.callback;
+        ws.send(JSON.stringify({
+          type: 'callback',
+          callbackId: callback,
+          success: false,
+          message: error.message
+        }));
+      }
+      
+    } else if (data.type === 'participateInScenario') {
+      try {
+        if (!hazardGenerator) {
+          throw new Error('Hazard system not available');
+        }
+        
+        const result = await hazardGenerator.processScenarioParticipation(
+          data.scenarioId,
+          player.id,
+          data.actionType,
+          data.actionData || {}
+        );
+        
+        const callback = data.callback;
+        ws.send(JSON.stringify({
+          type: 'callback',
+          callbackId: callback,
+          success: result.success,
+          data: result,
+          message: result.message
+        }));
+        
+        // If successful, update player stats and broadcast progress
+        if (result.success && result.rewards) {
+          // Apply rewards
+          if (result.rewards.experience) {
+            player.stats.experience = (player.stats.experience || 0) + result.rewards.experience;
+            player.level = Math.floor(player.stats.experience / 100) + 1;
+          }
+          
+          if (result.rewards.resources) {
+            player.resources += result.rewards.resources;
+          }
+          
+          // Broadcast scenario progress to all players
+          broadcast({
+            type: 'scenario_progress',
+            scenarioId: data.scenarioId,
+            playerId: player.id,
+            action: data.actionType,
+            message: result.message
+          });
+        }
+        
+      } catch (error) {
+        console.error('Error participating in scenario:', error);
+        const callback = data.callback;
+        ws.send(JSON.stringify({
+          type: 'callback',
+          callbackId: callback,
+          success: false,
+          message: error.message
+        }));
+      }
+      
+    } else if (data.type === 'getHazardStatus') {
+      try {
+        if (!hazardSystem || !hazardEffects) {
+          throw new Error('Hazard system not available');
+        }
+        
+        const sectorCoords = { x: player.sectorX || 0, y: player.sectorY || 0 };
+        const sectorHazards = hazardSystem.getSectorHazards(sectorCoords.x, sectorCoords.y);
+        const playerEffects = hazardEffects.getPlayerHazardEffects(player.id);
+        const systemHealth = hazardEffects.getSystemHealth(player.id);
+        const warnings = hazardEffects.getWarningMessages(player.id);
+        const exposureHistory = hazardEffects.getExposureHistory(player.id);
+        
+        const callback = data.callback;
+        ws.send(JSON.stringify({
+          type: 'callback',
+          callbackId: callback,
+          success: true,
+          data: {
+            sectorHazards: sectorHazards.map(h => ({
+              id: h.id,
+              type: h.type,
+              name: h.name,
+              severity: h.severity,
+              x: h.x,
+              y: h.y,
+              description: h.description
+            })),
+            activeEffects: playerEffects,
+            systemHealth,
+            warnings,
+            exposureHistory: exposureHistory.slice(-10) // Last 10 exposures
+          }
+        }));
+      } catch (error) {
+        console.error('Error getting hazard status:', error);
+        const callback = data.callback;
+        ws.send(JSON.stringify({
+          type: 'callback',
+          callbackId: callback,
+          success: false,
+          message: error.message
+        }));
+      }
+      
+    } else if (data.type === 'purchaseCountermeasure') {
+      try {
+        if (!hazardEffects) {
+          throw new Error('Hazard system not available');
+        }
+        
+        const { COUNTERMEASURES } = require('./hazards/HazardSystem');
+        const countermeasure = COUNTERMEASURES[data.countermeasureId];
+        
+        if (!countermeasure) {
+          throw new Error('Invalid countermeasure');
+        }
+        
+        if (player.resources < countermeasure.cost) {
+          throw new Error('Insufficient resources');
+        }
+        
+        // Deduct cost and add countermeasure
+        player.resources -= countermeasure.cost;
+        hazardEffects.addCountermeasure(player.id, data.countermeasureId);
+        
+        const callback = data.callback;
+        ws.send(JSON.stringify({
+          type: 'callback',
+          callbackId: callback,
+          success: true,
+          data: {
+            countermeasure: {
+              id: data.countermeasureId,
+              name: countermeasure.name,
+              description: countermeasure.description,
+              cost: countermeasure.cost
+            },
+            newResourceAmount: player.resources
+          }
+        }));
+        
+        // Broadcast countermeasure purchase
+        broadcast({
+          type: 'countermeasure_purchased',
+          playerId: player.id,
+          countermeasureId: data.countermeasureId,
+          countermeasureName: countermeasure.name
+        });
+        
+      } catch (error) {
+        console.error('Error purchasing countermeasure:', error);
+        const callback = data.callback;
+        ws.send(JSON.stringify({
+          type: 'callback',
+          callbackId: callback,
+          success: false,
+          message: error.message
+        }));
+      }
+      
+    } else if (data.type === 'repairSystem') {
+      try {
+        if (!hazardEffects) {
+          throw new Error('Hazard system not available');
+        }
+        
+        const { SHIP_SYSTEMS } = require('./hazards/HazardEffects');
+        const systemDef = SHIP_SYSTEMS[data.systemId];
+        
+        if (!systemDef) {
+          throw new Error('Invalid system');
+        }
+        
+        const repairCost = Math.floor(systemDef.repairCost * (data.repairAmount || 1.0));
+        
+        if (player.resources < repairCost) {
+          throw new Error('Insufficient resources for repair');
+        }
+        
+        // Perform repair
+        const result = hazardEffects.repairSystem(player.id, data.systemId, data.repairAmount || 1.0);
+        
+        if (result.success) {
+          player.resources -= repairCost;
+          
+          const callback = data.callback;
+          ws.send(JSON.stringify({
+            type: 'callback',
+            callbackId: callback,
+            success: true,
+            data: {
+              systemId: data.systemId,
+              newHealth: result.newHealth,
+              repairCost: repairCost,
+              newResourceAmount: player.resources
+            }
+          }));
+        } else {
+          throw new Error(result.error);
+        }
+        
+      } catch (error) {
+        console.error('Error repairing system:', error);
+        const callback = data.callback;
+        ws.send(JSON.stringify({
+          type: 'callback',
+          callbackId: callback,
+          success: false,
+          message: error.message
+        }));
+      }
     }
   });
   
@@ -3162,6 +3407,51 @@ function startGameLoop() {
       }
     }
     
+    // Process emergency scenarios and dynamic hazard events
+    if (hazardGenerator) {
+      try {
+        // Clean up expired events
+        hazardGenerator.cleanupExpiredEvents();
+        
+        // Randomly trigger emergency scenarios (low probability)
+        if (Math.random() < 0.005) { // 0.5% chance per game loop tick
+          const scenarioTypes = Object.keys(require('./hazards/HazardGenerator').DYNAMIC_EVENTS)
+            .filter(type => require('./hazards/HazardGenerator').DYNAMIC_EVENTS[type].missionType);
+          
+          if (scenarioTypes.length > 0 && activePlayers.size > 0) {
+            const randomType = scenarioTypes[Math.floor(Math.random() * scenarioTypes.length)];
+            const randomPlayer = Array.from(activePlayers.values())[Math.floor(Math.random() * activePlayers.size)];
+            const centerSector = { x: randomPlayer.sectorX || 0, y: randomPlayer.sectorY || 0 };
+            
+            const eventData = await hazardGenerator.triggerDynamicEvent(randomType, centerSector, 1.0);
+            const scenario = await hazardGenerator.handleEmergencyScenario(randomType, eventData);
+            
+            if (scenario) {
+              // Broadcast emergency scenario to all players
+              broadcast({
+                type: 'emergency_scenario_started',
+                scenario: {
+                  id: scenario.id,
+                  type: scenario.type,
+                  missionType: scenario.missionType,
+                  name: scenario.name,
+                  description: scenario.description,
+                  location: scenario.location,
+                  rewards: scenario.rewards,
+                  expiresAt: scenario.expiresAt,
+                  metadata: scenario.metadata
+                }
+              });
+              
+              console.log(`Emergency scenario "${scenario.name}" triggered at sector (${scenario.location.x}, ${scenario.location.y})`);
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error processing emergency scenarios:', error);
+      }
+    }
+    
     // Update player positions
     for (const [ws, p] of activePlayers.entries()) {
       // Skip movement if dead
@@ -3206,6 +3496,100 @@ function startGameLoop() {
             await sectorManager.updatePlayerPosition(p.id, p.sectorX || 0, p.sectorY || 0, p.x, p.y);
           } catch (error) {
             console.error('Error processing player hazard effects:', error);
+          }
+        }
+        
+        // Process environmental hazard effects
+        if (hazardSystem && hazardEffects) {
+          try {
+            const sectorCoords = { x: p.sectorX || 0, y: p.sectorY || 0 };
+            const playerPosition = { x: p.x, y: p.y };
+            const deltaTime = TICK_INTERVAL;
+            
+            // Get hazard effects for player's current location
+            const hazardEffectsList = hazardSystem.processPlayerHazardEffects(p.id, playerPosition, sectorCoords);
+            
+            if (hazardEffectsList.length > 0) {
+              // Process the effects on the player
+              const effectResults = hazardEffects.processHazardEffects(p.id, hazardEffectsList, playerPosition, deltaTime);
+              
+              // Apply movement modifications
+              if (effectResults.movementModifier < 1.0) {
+                // Reduce player movement speed due to hazards
+                const hazardModifiedSpeed = speed * effectResults.movementModifier;
+                const speedReduction = speed - hazardModifiedSpeed;
+                
+                // Adjust position back by the amount reduced
+                if (p.inputs.up) p.y += speedReduction;
+                if (p.inputs.down) p.y -= speedReduction;
+                if (p.inputs.left) p.x += speedReduction;
+                if (p.inputs.right) p.x -= speedReduction;
+              }
+              
+              // Apply health effects
+              if (effectResults.healthEffects.damage > 0) {
+                p.health = Math.max(0, (p.health || p.shipProperties.maxHealth) - effectResults.healthEffects.damage);
+                
+                // Check if player died from hazard damage
+                if (p.health <= 0) {
+                  p.isDead = true;
+                  p.deathTimestamp = Date.now();
+                  
+                  // Track hazard-related death
+                  p.stats.deaths = (p.stats.deaths || 0) + 1;
+                  
+                  ws.send(JSON.stringify({
+                    type: 'player_death',
+                    cause: 'environmental_hazard',
+                    message: 'Killed by environmental hazards'
+                  }));
+                }
+              }
+              
+              if (effectResults.healthEffects.recovery > 0) {
+                p.health = Math.min(p.shipProperties.maxHealth, (p.health || 0) + effectResults.healthEffects.recovery);
+              }
+              
+              // Send hazard warnings to player
+              if (effectResults.warnings.length > 0) {
+                ws.send(JSON.stringify({
+                  type: 'hazard_warnings',
+                  warnings: effectResults.warnings
+                }));
+              }
+              
+              // Send visual effects
+              if (effectResults.visualEffects.length > 0) {
+                ws.send(JSON.stringify({
+                  type: 'hazard_visual_effects',
+                  effects: effectResults.visualEffects
+                }));
+              }
+              
+              // Send audio effects
+              if (effectResults.audioQueue.length > 0) {
+                ws.send(JSON.stringify({
+                  type: 'hazard_audio_effects',
+                  audio: effectResults.audioQueue
+                }));
+              }
+              
+              // Send countermeasure recommendations
+              if (effectResults.countermeasureRecommendations.length > 0) {
+                ws.send(JSON.stringify({
+                  type: 'hazard_countermeasure_recommendations',
+                  recommendations: effectResults.countermeasureRecommendations
+                }));
+              }
+            }
+            
+            // Initialize hazard effects for new players
+            if (!hazardEffects.activeEffects.has(p.id)) {
+              hazardEffects.initializePlayer(p.id);
+            }
+            
+          } catch (error) {
+            console.error('Error processing environmental hazard effects:', error);
           }
         }
       }
