@@ -274,7 +274,7 @@ class Faction {
    * Create a new fleet with specified mission
    */
   createFleet(mission, gameState) {
-    const NPCFleet = require('./NPCFleet');
+    const { NPCFleet } = require('./NPCFleet');
     
     const fleetConfig = {
       factionId: this.id,
