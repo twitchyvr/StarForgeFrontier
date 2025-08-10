@@ -635,7 +635,7 @@
         galaxyUI.updateForPlayerPosition(player.x, player.y);
         
         // Request sector info if we haven't received it yet
-        if (!currentSectorData) {
+        if (!currentSectorData && ws.readyState === WebSocket.OPEN) {
           ws.send(JSON.stringify({ type: 'request_sector_info' }));
         }
       }
@@ -1026,10 +1026,12 @@
     
     if (distance <= shipProperties.weaponRange && shipProperties.damage > 0) {
       // Fire weapon
-      ws.send(JSON.stringify({
-        type: 'fire_weapon',
-        targetId: selectedTarget
-      }));
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: 'fire_weapon',
+          targetId: selectedTarget
+        }));
+      }
       
       weaponCooldown = 60; // 1 second at 60 FPS
       lastFireTime = Date.now();
@@ -1053,10 +1055,12 @@
     const distance = Math.sqrt(dx * dx + dy * dy);
     
     if (distance <= shipProperties.collectionRange) {
-      ws.send(JSON.stringify({
-        type: 'collect_ore',
-        oreId: ore.id
-      }));
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: 'collect_ore',
+          oreId: ore.id
+        }));
+      }
     }
   }
   
@@ -1110,7 +1114,9 @@
     if (!self || myResources < 50) return;
     const offset = (self.modules.length) * 22;
     const module = { id: 'engine', x: offset, y: 0 };
-    ws.send(JSON.stringify({ type: 'build', module }));
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'build', module }));
+    }
     showNotification('Engine module added!', 'success');
     triggerShake(10, 300);
   });
@@ -1120,7 +1126,9 @@
     if (!self || myResources < 30) return;
     const offset = (self.modules.length) * 22;
     const module = { id: 'cargo', x: offset, y: 0 };
-    ws.send(JSON.stringify({ type: 'build', module }));
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'build', module }));
+    }
     showNotification('Cargo module added!', 'success');
     triggerShake(8, 250);
   });
@@ -1130,7 +1138,9 @@
     if (!self || myResources < 70) return;
     const offset = (self.modules.length) * 22;
     const module = { id: 'weapon', x: offset, y: 0 };
-    ws.send(JSON.stringify({ type: 'build', module }));
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'build', module }));
+    }
     showNotification('Weapon module added!', 'success');
     triggerShake(10, 300);
   });
@@ -1140,7 +1150,9 @@
     if (!self || myResources < 60) return;
     const offset = (self.modules.length) * 22;
     const module = { id: 'shield', x: offset, y: 0 };
-    ws.send(JSON.stringify({ type: 'build', module }));
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'build', module }));
+    }
     showNotification('Shield module added!', 'success');
     triggerShake(8, 250);
   });
@@ -1150,7 +1162,9 @@
     if (!self || myResources < 120) return;
     const offset = (self.modules.length) * 22;
     const module = { id: 'reactor', x: offset, y: 0 };
-    ws.send(JSON.stringify({ type: 'build', module }));
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'build', module }));
+    }
     showNotification('Reactor module added!', 'success');
     triggerShake(10, 300);
   });
@@ -1163,7 +1177,9 @@
       if (!self || myResources < 150) return;
       const offset = (self.modules.length) * 22;
       const module = { id: 'warp_drive', x: offset, y: 0 };
-      ws.send(JSON.stringify({ type: 'build', module }));
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'build', module }));
+      }
       showNotification('Warp drive module added!', 'success');
       triggerShake(10, 300);
       

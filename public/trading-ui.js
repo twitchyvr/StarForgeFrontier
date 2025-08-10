@@ -1064,11 +1064,33 @@ class TradingUI {
   async updateAvailableContracts() {
     try {
       const response = await fetch('/api/contracts/available');
+      
+      if (!response.ok) {
+        if (response.status === 502) {
+          console.debug('Contracts service temporarily unavailable');
+        } else if (response.status === 503) {
+          console.debug('Contract system still initializing');
+        } else {
+          console.warn(`Contracts API returned status ${response.status}`);
+        }
+        return;
+      }
+
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        console.warn('Contracts API returned non-JSON response');
+        return;
+      }
+
       const contracts = await response.json();
       this.availableContracts = contracts;
       this.updateAvailableContractsList();
     } catch (error) {
-      console.error('Error updating available contracts:', error);
+      if (error instanceof SyntaxError && error.message.includes('JSON')) {
+        console.debug('Contracts API response parsing failed - service may be initializing');
+      } else {
+        console.error('Error updating available contracts:', error);
+      }
     }
   }
 
