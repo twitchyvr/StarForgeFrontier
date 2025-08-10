@@ -2556,10 +2556,24 @@ wss.on('connection', async (ws) => {
       // Send detailed information about current sector
       const currentSector = sectorManager.getPlayerSector(player.id);
       
-      if (currentSector) {
+      if (currentSector && typeof currentSector.getSectorData === 'function') {
+        try {
+          ws.send(JSON.stringify({
+            type: 'sector_info',
+            sector: currentSector.getSectorData()
+          }));
+        } catch (error) {
+          console.error('Error getting sector data:', error);
+          ws.send(JSON.stringify({
+            type: 'error',
+            message: 'Failed to get sector information'
+          }));
+        }
+      } else {
+        console.warn('No valid sector found for player:', player.id);
         ws.send(JSON.stringify({
           type: 'sector_info',
-          sector: currentSector.getSectorData()
+          sector: null
         }));
       }
       

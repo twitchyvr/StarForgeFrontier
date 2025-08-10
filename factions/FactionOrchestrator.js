@@ -73,7 +73,11 @@ class FactionOrchestrator {
     this.lastUpdate = Date.now();
     this.lastDiplomacyUpdate = Date.now();
     this.lastEventProcessing = Date.now();
+    this.lastBatchSave = Date.now();
     this.updateTimer = null;
+    this.territoryMapDirty = false;
+    this.batchSaveInProgress = false;
+    this.lastUpdateDuration = 0;
     
     // Performance monitoring
     this.performanceStats = {
@@ -249,38 +253,64 @@ class FactionOrchestrator {
     const startTime = Date.now();
     
     try {
-      // Create game state snapshot for AI decisions
-      const gameState = this.createGameState();
-      
-      // Update all factions
-      for (const [factionId, faction] of this.factions.entries()) {
-        try {
-          faction.update(gameState);
-          
-          // Save faction state periodically
-          if (Math.random() < 0.1) { // 10% chance per update
-            await this.saveFaction(faction);
-          }
-          
-        } catch (error) {
-          console.error(`Error updating faction ${faction.name}:`, error);
-        }
+      // Skip update if performance threshold exceeded (emergency brake)
+      const lastUpdateDuration = this.lastUpdateDuration || 0;
+      if (lastUpdateDuration > 200) {
+        console.warn(`Faction update skipped - last duration was ${lastUpdateDuration}ms`);
+        return;
       }
       
-      // Update territory map
-      this.updateTerritoryMap();
+      // Create game state snapshot for AI decisions (optimized)
+      const gameState = this.createGameStateOptimized();
       
-      // Process inter-faction diplomacy
+      // Update all factions (parallel processing for better performance)
+      const factionUpdates = Array.from(this.factions.entries()).map(([factionId, faction]) => {
+        return new Promise((resolve) => {
+          try {
+            faction.update(gameState);
+            resolve(faction);
+          } catch (error) {
+            console.error(`Error updating faction ${faction.name}:`, error);
+            resolve(null);
+          }
+        });
+      });
+      
+      // Wait for all faction updates with timeout
+      const updatedFactions = await Promise.allSettled(
+        factionUpdates.map(p => Promise.race([p, new Promise(resolve => setTimeout(() => resolve(null), 50))]))
+      );
+      
+      // Quick performance check
+      const midTime = Date.now();
+      if (midTime - startTime > 75) {
+        console.warn(`Faction updates took ${midTime - startTime}ms, skipping heavy operations`);
+        this.updatePerformanceStats(startTime);
+        return;
+      }
+      
+      // Update territory map (lightweight operation)
+      this.updateTerritoryMapOptimized();
+      
+      // Process less critical updates with time-based throttling
       const now = Date.now();
+      
+      // Diplomacy (every 10 seconds)
       if (now - this.lastDiplomacyUpdate > this.config.diplomacyUpdateInterval) {
         this.updateDiplomacy();
         this.lastDiplomacyUpdate = now;
       }
       
-      // Process faction events
+      // Events (every 5 seconds) 
       if (now - this.lastEventProcessing > this.config.eventProcessingInterval) {
         this.processEvents();
         this.lastEventProcessing = now;
+      }
+      
+      // Batch database saves (every 30 seconds) - moved out of hot loop
+      if (now - this.lastBatchSave > 30000) {
+        this.scheduleBatchSave();
+        this.lastBatchSave = now;
       }
       
       // Update performance statistics
@@ -290,6 +320,7 @@ class FactionOrchestrator {
       
     } catch (error) {
       console.error('Error in faction system update:', error);
+      this.updatePerformanceStats(startTime);
     }
   }
 
@@ -307,6 +338,23 @@ class FactionOrchestrator {
   }
 
   /**
+   * Create optimized game state snapshot for better performance
+   */
+  createGameStateOptimized() {
+    // Only create expensive data structures if needed
+    const playerCount = Object.keys(global.players || {}).length;
+    
+    return {
+      factions: this.factions,
+      fleets: this.allFleets,
+      territoryMap: this.territoryMap,
+      playerCount: playerCount, // Just count instead of full object
+      players: playerCount < 10 ? (global.players || {}) : {}, // Skip if too many players
+      timestamp: Date.now()
+    };
+  }
+
+  /**
    * Update territorial control map
    */
   updateTerritoryMap() {
@@ -317,6 +365,53 @@ class FactionOrchestrator {
         this.territoryMap.set(sectorId, factionId);
       }
     }
+  }
+
+  /**
+   * Update territorial control map (optimized version)
+   */
+  updateTerritoryMapOptimized() {
+    // Only update if territories have actually changed
+    if (!this.territoryMapDirty) {
+      return;
+    }
+    
+    this.territoryMap.clear();
+    
+    for (const [factionId, faction] of this.factions.entries()) {
+      for (const sectorId of faction.territory) {
+        this.territoryMap.set(sectorId, factionId);
+      }
+    }
+    
+    this.territoryMapDirty = false;
+  }
+
+  /**
+   * Schedule batch database save (non-blocking)
+   */
+  scheduleBatchSave() {
+    if (this.batchSaveInProgress) {
+      return; // Skip if already saving
+    }
+    
+    this.batchSaveInProgress = true;
+    
+    // Save asynchronously without blocking the main update loop
+    setImmediate(async () => {
+      try {
+        const factionsToSave = Array.from(this.factions.values()).slice(0, 3); // Limit to 3 per batch
+        const savePromises = factionsToSave.map(faction => this.saveFaction(faction).catch(err => {
+          console.error(`Failed to save faction ${faction.name}:`, err);
+        }));
+        
+        await Promise.all(savePromises);
+      } catch (error) {
+        console.error('Batch save error:', error);
+      } finally {
+        this.batchSaveInProgress = false;
+      }
+    });
   }
 
   /**
@@ -657,6 +752,7 @@ class FactionOrchestrator {
    */
   updatePerformanceStats(startTime) {
     const updateTime = Date.now() - startTime;
+    this.lastUpdateDuration = updateTime; // Track for performance brake
     
     this.performanceStats.updateCount++;
     this.performanceStats.averageUpdateTime = 
@@ -666,9 +762,15 @@ class FactionOrchestrator {
     this.performanceStats.activeFleets = this.allFleets.size;
     this.performanceStats.activeFactions = this.factions.size;
     
-    // Log performance warnings
+    // Log performance warnings with more detail
     if (updateTime > this.config.performanceThreshold) {
-      console.warn(`Faction update took ${updateTime}ms (threshold: ${this.config.performanceThreshold}ms)`);
+      console.warn(`Faction update took ${updateTime}ms (threshold: ${this.config.performanceThreshold}ms) - ${this.factions.size} factions, ${this.allFleets.size} fleets`);
+    }
+    
+    // Reset performance stats periodically to prevent memory buildup
+    if (this.performanceStats.updateCount % 100 === 0) {
+      this.performanceStats.averageUpdateTime = updateTime;
+      this.performanceStats.maxUpdateTime = updateTime;
     }
   }
 

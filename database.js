@@ -383,6 +383,23 @@ class Database {
         FOREIGN KEY (faction_id) REFERENCES factions (id)
       )`,
 
+      // NPC fleets (alternative table structure for compatibility)
+      `CREATE TABLE IF NOT EXISTS npc_fleets (
+        id TEXT PRIMARY KEY,
+        faction_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        ships TEXT NOT NULL, -- JSON array of ships
+        current_sector TEXT NOT NULL, -- JSON sector coordinates
+        destination TEXT, -- JSON destination coordinates
+        mission TEXT NOT NULL,
+        mission_data TEXT, -- JSON mission data
+        resources INTEGER DEFAULT 1000,
+        status TEXT DEFAULT 'active',
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        FOREIGN KEY (faction_id) REFERENCES factions (id)
+      )`,
+
       // Faction ships
       `CREATE TABLE IF NOT EXISTS faction_ships (
         ship_id TEXT PRIMARY KEY,
@@ -1622,7 +1639,7 @@ class Database {
    */
   async createTradingStation(stationData) {
     const result = await this.run(
-      `INSERT INTO trading_stations 
+      `INSERT OR REPLACE INTO trading_stations 
        (id, sector_x, sector_y, station_name, station_type, biome_type, x, y, reputation_modifier) 
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [

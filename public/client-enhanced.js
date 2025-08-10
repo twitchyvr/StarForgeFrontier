@@ -96,7 +96,7 @@
   resize();
 
   // Notification system
-  function showNotification(message, type = 'info', duration = 3000) {
+  function showNotification(message, type = 'info', duration = 6000) {
     const notification = document.createElement('div');
     notification.className = `notification ${type}`;
     notification.textContent = message;
@@ -262,6 +262,12 @@
 
   // Send authentication message immediately after connection
   ws.onopen = () => {
+    // Hide loading screen once connection is established
+    const loadingScreen = document.getElementById('loadingScreen');
+    if (loadingScreen) {
+      loadingScreen.style.display = 'none';
+    }
+    
     if (isGuest) {
       // Create a temporary guest player
       ws.send(JSON.stringify({
@@ -525,7 +531,7 @@
         showNotification('Ancient technology activated in this sector!', 'event', 4000);
         triggerShake(12, 400);
       } else if (msg.event && msg.event.type === 'asteroid_collapse') {
-        showNotification('Asteroid collapse detected! New ore deposits formed!', 'info', 3000);
+        showNotification('Asteroid collapse detected! New ore deposits formed!', 'info');
         triggerShake(8, 300);
       }
     } else if (msg.type === 'trading_transaction') {
