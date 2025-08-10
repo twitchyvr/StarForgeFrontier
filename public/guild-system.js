@@ -536,9 +536,16 @@ class GuildSystemUI {
    */
   async loadPlayerGuild() {
     try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        // Silently skip guild loading if no token is available
+        console.debug('No authentication token available for guild loading');
+        return;
+      }
+
       const response = await fetch('/api/guild/my-guild', {
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${token}`
         }
       });
 
@@ -547,6 +554,12 @@ class GuildSystemUI {
         this.playerGuild = data.guild;
         this.guildData = data;
         this.updateUIForGuildMember();
+      } else if (response.status === 401) {
+        // User is not authenticated or token is invalid - this is expected for guests
+        console.debug('User not authenticated for guild access');
+      } else if (response.status === 404) {
+        // Player is not in a guild - this is expected
+        console.debug('Player is not currently in a guild');
       } else {
         this.playerGuild = null;
         this.updateUIForNonMember();

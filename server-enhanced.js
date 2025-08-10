@@ -825,6 +825,10 @@ app.get('/api/trading/market-summary', async (req, res) => {
 // Get available contracts
 app.get('/api/contracts/available', async (req, res) => {
   try {
+    if (!contractSystem) {
+      return res.status(503).json({ error: 'Contract system not initialized yet' });
+    }
+    
     const limit = parseInt(req.query.limit) || 20;
     const contracts = contractSystem.getAvailableContracts(limit);
     res.json(contracts);
