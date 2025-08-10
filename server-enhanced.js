@@ -490,6 +490,14 @@ app.post('/api/login', async (req, res) => {
     // Generate session token (in production, use JWT)
     const sessionToken = uuidv4();
     
+    // Store session token in player sessions
+    playerSessions.set(player.id, {
+      ...playerSessions.get(player.id),
+      sessionToken: sessionToken,
+      loginTime: Date.now(),
+      username: player.username
+    });
+    
     res.json({ 
       message: 'Login successful', 
       playerId: player.id, 
@@ -502,6 +510,66 @@ app.post('/api/login', async (req, res) => {
     res.status(500).json({ error: 'Internal server error' });
   }
 });
+
+// ===== AUTHENTICATION HELPER FUNCTIONS =====
+
+/**
+ * Validate session token and return player ID
+ */
+async function validateToken(token) {
+  try {
+    // In production, this should validate JWT tokens
+    // For now, we'll check if it's a valid UUID and exists in active sessions
+    if (!token) {
+      return null;
+    }
+
+    // Simple token validation - check if it matches a UUID pattern
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(token)) {
+      return null;
+    }
+
+    // For now, we'll extract player ID from active sessions
+    // In production, this should decode and validate JWT
+    for (const [playerId, session] of playerSessions.entries()) {
+      if (session.sessionToken === token) {
+        // Check if session is still valid (optional expiry check)
+        const sessionAge = Date.now() - (session.loginTime || 0);
+        const maxSessionAge = 24 * 60 * 60 * 1000; // 24 hours
+        
+        if (sessionAge < maxSessionAge) {
+          return playerId;
+        }
+      }
+    }
+
+    return null;
+  } catch (error) {
+    console.error('Error validating token:', error);
+    return null;
+  }
+}
+
+/**
+ * Authentication middleware
+ */
+async function authenticateToken(req, res, next) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ message: 'No token provided' });
+  }
+
+  const token = authHeader.substring(7);
+  const playerId = await validateToken(token);
+  
+  if (!playerId) {
+    return res.status(401).json({ message: 'Invalid token' });
+  }
+
+  req.playerId = playerId;
+  next();
+}
 
 // ===== TRADING SYSTEM API ENDPOINTS =====
 

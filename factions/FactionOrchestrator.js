@@ -720,6 +720,124 @@ class FactionOrchestrator {
     
     console.log('Faction system shutdown complete');
   }
+
+  // ===== PLAYER MANAGEMENT METHODS (SERVER INTEGRATION) =====
+
+  /**
+   * Add player to faction system tracking
+   */
+  addPlayer(playerId, playerData) {
+    // Track active players for faction interactions
+    if (!this.activePlayers) {
+      this.activePlayers = new Map();
+    }
+    
+    this.activePlayers.set(playerId, {
+      id: playerId,
+      username: playerData.username || 'Unknown',
+      position: playerData.position || { x: 0, y: 0 },
+      currentSector: playerData.currentSector || '0,0',
+      lastUpdate: Date.now(),
+      online: true
+    });
+
+    console.log(`Added player ${playerId} to faction system tracking`);
+  }
+
+  /**
+   * Remove player from faction system tracking
+   */
+  removePlayer(playerId) {
+    if (this.activePlayers && this.activePlayers.has(playerId)) {
+      this.activePlayers.delete(playerId);
+      console.log(`Removed player ${playerId} from faction system tracking`);
+    }
+  }
+
+  /**
+   * Update player data in faction system
+   */
+  updatePlayer(playerId, playerData) {
+    if (!this.activePlayers) {
+      this.activePlayers = new Map();
+    }
+
+    const existingData = this.activePlayers.get(playerId) || {};
+    this.activePlayers.set(playerId, {
+      ...existingData,
+      id: playerId,
+      username: playerData.username || existingData.username || 'Unknown',
+      position: playerData.position || existingData.position || { x: 0, y: 0 },
+      currentSector: playerData.currentSector || existingData.currentSector || '0,0',
+      lastUpdate: Date.now(),
+      online: true
+    });
+  }
+
+  /**
+   * Queue event for processing
+   */
+  queueEvent(eventType, eventData) {
+    const event = {
+      id: uuidv4(),
+      type: eventType,
+      data: eventData,
+      timestamp: Date.now(),
+      status: 'queued'
+    };
+
+    this.events.set(event.id, event);
+    console.log(`Queued faction event: ${eventType}`);
+    
+    return event.id;
+  }
+
+  /**
+   * Get active players for faction AI decisions
+   */
+  getActivePlayers() {
+    if (!this.activePlayers) {
+      return new Map();
+    }
+    return this.activePlayers;
+  }
+
+  /**
+   * Reputation manager compatibility interface
+   */
+  get reputationManager() {
+    // Return a compatibility interface for reputation operations
+    return {
+      getTradePriceModifier: (playerId, factionId) => {
+        const faction = this.factions.get(factionId);
+        if (!faction) return 1.0;
+        
+        const reputation = faction.getPlayerReputation(playerId);
+        const level = faction.getReputationLevel(playerId);
+        
+        // Calculate trade price modifier based on reputation
+        // Positive reputation = better prices (lower multiplier)
+        // Negative reputation = worse prices (higher multiplier)
+        return Math.max(0.7, Math.min(1.5, 1.0 - (reputation / 200)));
+      },
+
+      getPlayerStanding: (playerId, factionId) => {
+        const faction = this.factions.get(factionId);
+        if (!faction) {
+          return { level: 'Unknown', reputation: 0, color: '#888888' };
+        }
+        
+        const reputation = faction.getPlayerReputation(playerId);
+        const level = faction.getReputationLevel(playerId);
+        
+        return {
+          level: level.level,
+          reputation: reputation,
+          color: level.color
+        };
+      }
+    };
+  }
 }
 
 module.exports = {

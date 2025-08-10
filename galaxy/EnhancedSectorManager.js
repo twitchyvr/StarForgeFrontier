@@ -681,6 +681,90 @@ class EnhancedSectorManager {
       }
     }
   }
+
+  // ===== COMPATIBILITY METHODS FOR SERVER INTEGRATION =====
+
+  /**
+   * Get sector coordinates for a given position (compatibility method)
+   */
+  getSectorCoordinatesForPosition(x, y) {
+    // Each sector is 2000x2000 units, centered on multiples of 2000
+    const sectorX = Math.floor((x + 1000) / 2000);
+    const sectorY = Math.floor((y + 1000) / 2000);
+    
+    return { x: sectorX, y: sectorY };
+  }
+
+  /**
+   * Move player to a different sector (compatibility method)
+   */
+  async movePlayerToSector(playerId, newCoordinates, newPosition = null) {
+    const oldCoordinates = this.playerSectors.get(playerId);
+    
+    // Remove from old sector tracking
+    if (oldCoordinates) {
+      const oldSectorKey = `${oldCoordinates.sectorX}_${oldCoordinates.sectorY}`;
+      const oldSector = this.activeSectors.get(oldSectorKey);
+      if (oldSector && oldSector.playerCount > 0) {
+        oldSector.playerCount--;
+      }
+    }
+    
+    // Get or load new sector
+    const newSector = await this.getSector(newCoordinates.x, newCoordinates.y);
+    newSector.playerCount++;
+    
+    // Update player position tracking
+    await this.updatePlayerPosition(playerId, newCoordinates.x, newCoordinates.y, 
+      newPosition ? newPosition.x : 0, newPosition ? newPosition.y : 0);
+    
+    // Set player position in new sector
+    if (newPosition) {
+      // Position specified (e.g., from warp)
+      return {
+        sector: newSector,
+        position: newPosition
+      };
+    } else {
+      // Calculate border crossing position
+      const borderPosition = this.calculateBorderPosition(newCoordinates);
+      return {
+        sector: newSector,
+        position: borderPosition
+      };
+    }
+  }
+
+  /**
+   * Calculate position when crossing sector border (compatibility method)
+   */
+  calculateBorderPosition(coordinates) {
+    // Place player at center of new sector for now
+    return {
+      x: 0,
+      y: 0
+    };
+  }
+
+  /**
+   * Get current sector for player at position (compatibility method)
+   */
+  getCurrentSectorForPlayer(playerId, position) {
+    const sectorCoords = this.getSectorCoordinatesForPosition(position.x, position.y);
+    const sectorKey = `${sectorCoords.x}_${sectorCoords.y}`;
+    
+    // Check if player changed sectors
+    const currentPlayerData = this.playerSectors.get(playerId);
+    const currentSectorKey = currentPlayerData ? 
+      `${currentPlayerData.sectorX}_${currentPlayerData.sectorY}` : null;
+      
+    if (currentSectorKey !== sectorKey) {
+      // Player moved to new sector - signal change needed
+      return null;
+    }
+    
+    return this.activeSectors.get(sectorKey);
+  }
 }
 
 module.exports = EnhancedSectorManager;
