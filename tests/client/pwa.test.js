@@ -242,6 +242,51 @@ describe('PWA Functionality', () => {
         expect(iconSizes).toContain(size);
       });
     });
+    
+    test('should reference PNG icons in manifest', () => {
+      const manifest = require('../../public/manifest.json');
+      
+      manifest.icons.forEach(icon => {
+        expect(icon.src).toMatch(/\.png$/);
+        expect(icon.type).toBe('image/png');
+      });
+    });
+    
+    test('should reference PNG icons in HTML meta tags', () => {
+      const fs = require('fs');
+      const path = require('path');
+      const htmlContent = fs.readFileSync(
+        path.join(__dirname, '../../public/index.html'), 
+        'utf8'
+      );
+      
+      // Check that apple-touch-icon references use PNG files
+      const appleTouchIconMatches = htmlContent.match(/rel="apple-touch-icon"[^>]*href="[^"]*"/g);
+      if (appleTouchIconMatches) {
+        appleTouchIconMatches.forEach(match => {
+          expect(match).toMatch(/\.png"/);
+          expect(match).not.toMatch(/\.svg"/);
+        });
+      }
+      
+      // Check that standard icon references use PNG files
+      const iconMatches = htmlContent.match(/rel="icon"[^>]*href="[^"]*"/g);
+      if (iconMatches) {
+        iconMatches.forEach(match => {
+          // Only check PNG type icons, allow SVG for the main icon
+          if (match.includes('type="image/png"')) {
+            expect(match).toMatch(/\.png"/);
+          }
+        });
+      }
+      
+      // Check Microsoft tile image
+      const tileImageMatch = htmlContent.match(/name="msapplication-TileImage"[^>]*content="[^"]*"/);
+      if (tileImageMatch) {
+        expect(tileImageMatch[0]).toMatch(/\.png"/);
+        expect(tileImageMatch[0]).not.toMatch(/\.svg"/);
+      }
+    });
   });
   
   describe('Device APIs Integration', () => {
