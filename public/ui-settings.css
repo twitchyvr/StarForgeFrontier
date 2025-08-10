@@ -1,0 +1,327 @@
+/**
+ * UI Settings Panel CSS for StarForgeFrontier
+ * Provides styling for the UI customization interface
+ */
+
+/* UI Settings Panel Specific Styles */
+.ui-settings-panel {
+  max-width: 450px;
+  width: 450px;
+}
+
+.ui-settings-panel .hud-panel-content {
+  max-height: 600px;
+  overflow-y: auto;
+}
+
+/* Settings Sections */
+.settings-section {
+  margin-bottom: 20px;
+  padding: 15px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.settings-section-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--hud-accent);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-section-title::before {
+  content: '';
+  width: 3px;
+  height: 14px;
+  background: var(--hud-accent);
+  border-radius: 2px;
+}
+
+/* Toggle Controls */
+.setting-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  padding: 8px 0;
+}
+
+.setting-item:last-child {
+  margin-bottom: 0;
+}
+
+.setting-label {
+  font-size: 13px;
+  color: var(--hud-text);
+  flex: 1;
+}
+
+.setting-label.disabled {
+  color: var(--hud-text-secondary);
+  opacity: 0.6;
+}
+
+/* Toggle Switch */
+.toggle-switch {
+  position: relative;
+  width: 44px;
+  height: 24px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
+  cursor: pointer;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  transition: all 0.3s ease;
+}
+
+.toggle-switch.active {
+  background: var(--hud-accent);
+  border-color: var(--hud-accent);
+}
+
+.toggle-switch::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  background: white;
+  border-radius: 50%;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.toggle-switch.active::after {
+  transform: translateX(20px);
+}
+
+/* Opacity Slider */
+.opacity-control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.opacity-slider {
+  flex: 1;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+  outline: none;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.opacity-slider::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  background: var(--hud-accent);
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.opacity-slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  background: var(--hud-accent);
+  border-radius: 50%;
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.opacity-value {
+  font-size: 11px;
+  color: var(--hud-text-secondary);
+  min-width: 35px;
+  text-align: right;
+}
+
+/* Preset Controls */
+.preset-controls {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 15px;
+}
+
+.preset-btn {
+  flex: 1;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  color: var(--hud-text);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  text-align: center;
+}
+
+.preset-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: var(--hud-accent);
+}
+
+.preset-btn.active {
+  background: var(--hud-accent);
+  border-color: var(--hud-accent);
+  color: white;
+}
+
+/* Action Buttons */
+.settings-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 20px;
+  padding-top: 15px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.settings-action-btn {
+  flex: 1;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  color: var(--hud-text);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  text-align: center;
+}
+
+.settings-action-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: var(--hud-accent);
+}
+
+.settings-action-btn.danger {
+  border-color: var(--hud-danger);
+  color: var(--hud-danger);
+}
+
+.settings-action-btn.danger:hover {
+  background: rgba(220, 53, 69, 0.2);
+  border-color: var(--hud-danger);
+}
+
+.settings-action-btn.success {
+  border-color: var(--hud-success);
+  color: var(--hud-success);
+}
+
+.settings-action-btn.success:hover {
+  background: rgba(40, 167, 69, 0.2);
+  border-color: var(--hud-success);
+}
+
+/* Import/Export */
+.import-export-section {
+  margin-top: 15px;
+}
+
+.file-input-wrapper {
+  position: relative;
+  display: inline-block;
+  width: 100%;
+}
+
+.file-input {
+  position: absolute;
+  opacity: 0;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+}
+
+.file-input-label {
+  display: block;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  color: var(--hud-text);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  text-align: center;
+}
+
+.file-input-label:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: var(--hud-accent);
+}
+
+/* Mobile Responsive */
+@media (max-width: 768px) {
+  .ui-settings-panel {
+    max-width: 95vw;
+    width: 95vw;
+  }
+  
+  .preset-controls {
+    flex-direction: column;
+  }
+  
+  .settings-actions {
+    flex-direction: column;
+  }
+  
+  .opacity-control {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 5px;
+  }
+  
+  .opacity-value {
+    text-align: center;
+  }
+}
+
+/* UI Element Opacity Control Classes */
+.ui-opacity-10 { opacity: 0.1 !important; }
+.ui-opacity-20 { opacity: 0.2 !important; }
+.ui-opacity-30 { opacity: 0.3 !important; }
+.ui-opacity-40 { opacity: 0.4 !important; }
+.ui-opacity-50 { opacity: 0.5 !important; }
+.ui-opacity-60 { opacity: 0.6 !important; }
+.ui-opacity-70 { opacity: 0.7 !important; }
+.ui-opacity-80 { opacity: 0.8 !important; }
+.ui-opacity-90 { opacity: 0.9 !important; }
+.ui-opacity-100 { opacity: 1.0 !important; }
+
+/* Hidden UI elements */
+.ui-hidden {
+  display: none !important;
+}
+
+/* Button labels hidden */
+.hide-button-labels .btn-text {
+  display: none !important;
+}
+
+.hide-button-labels .hud-toggle-label {
+  display: none !important;
+}
+
+/* Compact mode for toggles when labels are hidden */
+.hide-button-labels .hud-toggle-btn {
+  min-width: auto;
+  padding: 8px;
+}
+
+.hide-button-labels .action-btn {
+  min-width: 40px;
+  padding: 8px;
+}
