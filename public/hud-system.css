@@ -453,7 +453,234 @@
 }
 
 /* ======================
-   Responsive Design
+   Collapsible Panel States
+   ====================== */
+
+/* Collapsed HUD Panel State */
+.hud-panel.collapsed {
+  height: auto;
+  min-height: auto;
+}
+
+.hud-panel.collapsed .hud-panel-content {
+  display: none !important;
+}
+
+.hud-panel.collapsed .hud-panel-header {
+  border-radius: 12px;
+  border-bottom: none;
+}
+
+/* Collapsed Main HUD Sections */
+.hud-section {
+  position: relative;
+  transition: var(--hud-transition);
+}
+
+.hud-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 6px 6px 0 0;
+  border-bottom: 1px solid var(--hud-border);
+  margin-bottom: 8px;
+}
+
+.hud-section-title {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--hud-accent);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.hud-section-collapse-btn {
+  width: 16px;
+  height: 16px;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+  color: var(--hud-text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 8px;
+  transition: var(--hud-transition);
+}
+
+.hud-section-collapse-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--hud-text);
+  border-color: var(--hud-accent);
+}
+
+/* Collapsed state for main HUD sections */
+.hud-section.collapsed {
+  opacity: 0.7;
+  transform: scale(0.8);
+}
+
+.hud-section.collapsed .stat-item,
+.hud-section.collapsed .action-btn {
+  display: none;
+}
+
+.hud-section.collapsed.player-stats::after {
+  content: "👤";
+  font-size: 20px;
+  display: block;
+  text-align: center;
+  padding: 8px;
+}
+
+.hud-section.collapsed.ship-stats::after {
+  content: "🚀";
+  font-size: 20px;
+  display: block;
+  text-align: center;
+  padding: 8px;
+}
+
+.hud-section.collapsed.combat-stats::after {
+  content: "⚔️";
+  font-size: 20px;
+  display: block;
+  text-align: center;
+  padding: 8px;
+}
+
+.hud-section.collapsed.quick-actions::after {
+  content: "⚙️";
+  font-size: 20px;
+  display: block;
+  text-align: center;
+  padding: 8px;
+}
+
+/* Controls Panel Hamburger Menu */
+.controls-hamburger {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  width: 50px;
+  height: 50px;
+  background: var(--hud-bg);
+  border: 1px solid var(--hud-border);
+  border-radius: 12px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  backdrop-filter: blur(10px);
+  z-index: 1000;
+  transition: var(--hud-transition);
+}
+
+.controls-hamburger:hover {
+  background: var(--hud-panel-bg);
+  border-color: var(--hud-accent);
+  transform: scale(1.05);
+}
+
+.hamburger-icon {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.hamburger-icon span {
+  width: 16px;
+  height: 2px;
+  background: var(--hud-text);
+  border-radius: 1px;
+  transition: var(--hud-transition);
+}
+
+.hamburger-label {
+  font-size: 8px;
+  font-weight: 600;
+  color: var(--hud-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.controls-collapse-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 20px;
+  height: 20px;
+  background: var(--hud-danger);
+  border: none;
+  border-radius: 50%;
+  color: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  transition: var(--hud-transition);
+  opacity: 0.7;
+}
+
+.controls-collapse-btn:hover {
+  opacity: 1;
+  transform: scale(1.1);
+}
+
+/* Target Info Auto-hide */
+.hud-section.weapon-status.auto-hidden {
+  opacity: 0;
+  transform: scale(0.8) translateY(20px);
+  pointer-events: none;
+}
+
+/* Quick Actions Collapsed to Vertical Strip */
+.hud-section.quick-actions.collapsed {
+  transform: none;
+  opacity: 1;
+  width: 60px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 4px;
+}
+
+.hud-section.quick-actions.collapsed .action-btn {
+  display: flex;
+  width: 40px;
+  height: 40px;
+  margin: 2px 0;
+  padding: 0;
+  border-radius: 50%;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.hud-section.quick-actions.collapsed .action-btn .btn-text {
+  display: none;
+}
+
+.hud-section.quick-actions.collapsed .action-btn .btn-icon {
+  font-size: 16px;
+}
+
+.hud-section.quick-actions.collapsed::after {
+  display: none;
+}
+
+/* ======================
+   Enhanced Responsive Design for Collapsed States
+   ====================== */
+
+/* ======================
+   Enhanced Responsive Design for Collapsed States
    ====================== */
 
 @media (max-width: 1200px) {
@@ -466,6 +693,15 @@
   .hud-panel.guild-panel,
   .hud-panel.skills-panel {
     width: 280px;
+  }
+  
+  .controls-hamburger {
+    width: 45px;
+    height: 45px;
+  }
+  
+  .hamburger-icon span {
+    width: 14px;
   }
 }
 
@@ -513,6 +749,50 @@
   
   .hud-panel.skills-panel.visible {
     transform: translateX(-50%) translateY(0);
+  }
+  
+  /* Mobile-friendly collapsed states */
+  .controls-hamburger {
+    width: 40px;
+    height: 40px;
+    top: 10px;
+    right: 10px;
+  }
+  
+  .hamburger-icon span {
+    width: 12px;
+    height: 1.5px;
+  }
+  
+  .hamburger-label {
+    font-size: 7px;
+  }
+  
+  .hud-section-header {
+    padding: 3px 6px;
+  }
+  
+  .hud-section-title {
+    font-size: 9px;
+  }
+  
+  .hud-section-collapse-btn {
+    width: 14px;
+    height: 14px;
+    font-size: 7px;
+  }
+  
+  /* Touch-friendly collapse buttons */
+  .hud-control-btn.collapse-btn {
+    min-width: 32px;
+    min-height: 32px;
+    font-size: 14px;
+  }
+  
+  .controls-collapse-btn {
+    width: 24px;
+    height: 24px;
+    font-size: 14px;
   }
 }
 
