@@ -403,6 +403,23 @@ class Database {
         FOREIGN KEY (fleet_id) REFERENCES faction_fleets (fleet_id)
       )`,
 
+      // NPC fleets table (for enhanced faction system)
+      `CREATE TABLE IF NOT EXISTS npc_fleets (
+        id TEXT PRIMARY KEY,
+        faction_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        ships TEXT NOT NULL, -- JSON array of ship data
+        current_sector TEXT NOT NULL, -- JSON object with x,y coordinates
+        destination TEXT, -- JSON object with x,y coordinates
+        mission TEXT NOT NULL, -- Mission type
+        mission_data TEXT, -- JSON data for mission-specific info
+        resources TEXT NOT NULL, -- JSON data for fleet resources
+        status TEXT NOT NULL DEFAULT 'idle', -- 'idle', 'moving', 'engaged', 'returning', 'destroyed'
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        FOREIGN KEY (faction_id) REFERENCES factions (id)
+      )`,
+
       // Player reputation with factions
       `CREATE TABLE IF NOT EXISTS faction_player_reputation (
         player_id TEXT NOT NULL,

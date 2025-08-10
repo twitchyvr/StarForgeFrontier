@@ -120,9 +120,9 @@ class GuildSystem {
       throw new Error('Guild name or tag already exists');
     }
 
-    // Get player level requirement (optional minimum cost)
+    // Get player level requirement (set to 1 for easier testing and new player experience)
     const player = await this.db.get('SELECT level FROM player_stats WHERE player_id = ?', [founderPlayerId]);
-    const requiredLevel = options.minimumLevel || 5;
+    const requiredLevel = options.minimumLevel || 1;
     
     if (!player || player.level < requiredLevel) {
       throw new Error(`Player must be level ${requiredLevel} or higher to create a guild`);

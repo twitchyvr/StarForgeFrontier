@@ -552,7 +552,37 @@ async function validateToken(token) {
 }
 
 /**
- * Authentication middleware
+ * Enhanced authentication middleware that supports both tokens and guest sessions
+ */
+async function authenticatePlayer(req, res, next) {
+  let playerId = null;
+  
+  // Try Bearer token authentication first
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.substring(7);
+    playerId = await validateToken(token);
+  }
+  
+  // If no token, try session-based auth for guests
+  if (!playerId && req.headers['x-player-id']) {
+    const guestPlayerId = req.headers['x-player-id'];
+    // Verify this is an active guest session
+    if (activePlayers.has(guestPlayerId)) {
+      playerId = guestPlayerId;
+    }
+  }
+  
+  if (!playerId) {
+    return res.status(401).json({ message: 'Authentication required' });
+  }
+  
+  req.playerId = playerId;
+  next();
+}
+
+/**
+ * Authentication middleware (legacy - for existing endpoints)
  */
 async function authenticateToken(req, res, next) {
   const authHeader = req.headers.authorization;
@@ -1883,18 +1913,9 @@ function handlePlayerRespawn(ws, player) {
 // ===== GUILD SYSTEM API ENDPOINTS =====
 
 // Get player's guild
-app.get('/api/guild/my-guild', async (req, res) => {
+app.get('/api/guild/my-guild', authenticatePlayer, async (req, res) => {
   try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ message: 'No token provided' });
-    }
-
-    const token = authHeader.substring(7);
-    const playerId = await validateToken(token);
-    if (!playerId) {
-      return res.status(401).json({ message: 'Invalid token' });
-    }
+    const playerId = req.playerId;
 
     const guild = guildSystem.getPlayerGuild(playerId);
     if (!guild) {
@@ -1917,18 +1938,9 @@ app.get('/api/guild/my-guild', async (req, res) => {
 });
 
 // Create a new guild
-app.post('/api/guild/create', async (req, res) => {
+app.post('/api/guild/create', authenticatePlayer, async (req, res) => {
   try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ message: 'No token provided' });
-    }
-
-    const token = authHeader.substring(7);
-    const playerId = await validateToken(token);
-    if (!playerId) {
-      return res.status(401).json({ message: 'Invalid token' });
-    }
+    const playerId = req.playerId;
 
     const { name, tag, description, guildType, maxMembers, recruitmentOpen, requiresApplication } = req.body;
     
@@ -1976,18 +1988,9 @@ app.get('/api/guild/search', async (req, res) => {
 });
 
 // Apply to join a guild
-app.post('/api/guild/:guildId/apply', async (req, res) => {
+app.post('/api/guild/:guildId/apply', authenticatePlayer, async (req, res) => {
   try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ message: 'No token provided' });
-    }
-
-    const token = authHeader.substring(7);
-    const playerId = await validateToken(token);
-    if (!playerId) {
-      return res.status(401).json({ message: 'Invalid token' });
-    }
+    const playerId = req.playerId;
 
     const { guildId } = req.params;
     const { message } = req.body;
@@ -2006,18 +2009,9 @@ app.post('/api/guild/:guildId/apply', async (req, res) => {
 });
 
 // Get guild members
-app.get('/api/guild/:guildId/members', async (req, res) => {
+app.get('/api/guild/:guildId/members', authenticatePlayer, async (req, res) => {
   try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ message: 'No token provided' });
-    }
-
-    const token = authHeader.substring(7);
-    const playerId = await validateToken(token);
-    if (!playerId) {
-      return res.status(401).json({ message: 'Invalid token' });
-    }
+    const playerId = req.playerId;
 
     const { guildId } = req.params;
     const guild = guildSystem.getGuild(guildId);
@@ -2554,12 +2548,18 @@ wss.on('connection', async (ws) => {
       
     } else if (data.type === 'request_sector_info') {
       // Send detailed information about current sector
-      const currentSector = sectorManager.getPlayerSector(player.id);
+      let currentSector = null;
+      try {
+        const sectorCoords = sectorManager.getSectorCoordinatesForPosition(player.x, player.y);
+        currentSector = await sectorManager.getSector(sectorCoords.x, sectorCoords.y);
+      } catch (error) {
+        console.error('Error getting sector info:', error);
+      }
       
       if (currentSector) {
         ws.send(JSON.stringify({
           type: 'sector_info',
-          sector: currentSector.getSectorData()
+          data: currentSector
         }));
       }
       
@@ -3224,7 +3224,16 @@ function startGameLoop() {
         1 + (p.shipProperties.componentCounts.cargo * COMPONENT_EFFECTS.cargo.efficiencyBonus) : 1;
       
       // Get player's current sector
-      const currentSector = sectorManager ? sectorManager.getPlayerSector(p.id) : null;
+      let currentSector = null;
+      if (sectorManager) {
+        try {
+          const sectorCoords = sectorManager.getSectorCoordinatesForPosition(p.x, p.y);
+          currentSector = await sectorManager.getSector(sectorCoords.x, sectorCoords.y);
+        } catch (error) {
+          console.error('Error getting player sector:', error);
+          currentSector = null;
+        }
+      }
       
       if (currentSector && currentSector.isLoaded) {
         // Use sector-based ore collection
