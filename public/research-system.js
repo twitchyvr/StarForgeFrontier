@@ -197,9 +197,9 @@ class ResearchUI {
    * Show the research interface
    */
   show() {
-    const interface = document.getElementById('research-interface');
-    if (interface) {
-      interface.classList.remove('hidden');
+    const researchInterface = document.getElementById('research-interface');
+    if (researchInterface) {
+      researchInterface.classList.remove('hidden');
       this.isVisible = true;
       this.refreshResearchData();
     }
@@ -209,9 +209,9 @@ class ResearchUI {
    * Hide the research interface
    */
   hide() {
-    const interface = document.getElementById('research-interface');
-    if (interface) {
-      interface.classList.add('hidden');
+    const researchInterface = document.getElementById('research-interface');
+    if (researchInterface) {
+      researchInterface.classList.add('hidden');
       this.isVisible = false;
     }
   }

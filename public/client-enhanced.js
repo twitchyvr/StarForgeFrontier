@@ -171,9 +171,11 @@
     }
   });
 
-  closeShopBtn.addEventListener('click', () => {
-    shopPanel.classList.add('hidden');
-  });
+  if (closeShopBtn) {
+    closeShopBtn.addEventListener('click', () => {
+      shopPanel.classList.add('hidden');
+    });
+  }
   
   // Ship editor toggle
   shipEditorToggleBtn.addEventListener('click', () => {
