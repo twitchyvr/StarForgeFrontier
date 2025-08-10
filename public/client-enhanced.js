@@ -83,9 +83,98 @@
   let shakeMagnitude = 0;
   let particleEffects = [];
   
-  // WebSocket connection
+  // WebSocket connection with reconnection logic
   const wsProtocol = location.protocol === 'https:' ? 'wss' : 'ws';
-  const ws = new WebSocket(`${wsProtocol}://${location.host}`);
+  let ws = null;
+  let reconnectAttempts = 0;
+  let maxReconnectAttempts = 5;
+  let reconnectInterval = 1000; // Start with 1 second
+  let reconnectTimer = null;
+  let isReconnecting = false;
+
+  function connectWebSocket() {
+    if (isReconnecting || (ws && ws.readyState === WebSocket.CONNECTING)) {
+      return;
+    }
+
+    try {
+      ws = new WebSocket(`${wsProtocol}://${location.host}`);
+      setupWebSocketHandlers();
+    } catch (error) {
+      console.error('Failed to create WebSocket:', error);
+      scheduleReconnect();
+    }
+  }
+
+  function setupWebSocketHandlers() {
+    ws.onopen = () => {
+      console.log('WebSocket connected');
+      reconnectAttempts = 0;
+      reconnectInterval = 1000;
+      isReconnecting = false;
+      
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+
+      showNotification('Connected to StarForgeFrontier', 'success', 2000);
+      
+      // Authenticate the player
+      authenticatePlayer();
+      
+      // Request initial data
+      sendWebSocketMessage({
+        type: 'request_all_data'
+      });
+    };
+
+    ws.onmessage = handleWebSocketMessage;
+
+    ws.onclose = (event) => {
+      console.log('WebSocket closed:', event.code, event.reason);
+      if (!isReconnecting && reconnectAttempts < maxReconnectAttempts) {
+        showNotification('Connection lost. Reconnecting...', 'warning', 3000);
+        scheduleReconnect();
+      } else if (reconnectAttempts >= maxReconnectAttempts) {
+        showNotification('Connection lost. Please refresh the page.', 'error', 10000);
+      }
+    };
+
+    ws.onerror = (error) => {
+      console.error('WebSocket error:', error);
+      if (!isReconnecting) {
+        showNotification('Connection error. Retrying...', 'error', 3000);
+      }
+    };
+  }
+
+  function scheduleReconnect() {
+    if (isReconnecting || reconnectAttempts >= maxReconnectAttempts) {
+      return;
+    }
+
+    isReconnecting = true;
+    reconnectAttempts++;
+    
+    const delay = Math.min(reconnectInterval * Math.pow(2, reconnectAttempts - 1), 30000);
+    
+    reconnectTimer = setTimeout(() => {
+      console.log(`Reconnect attempt ${reconnectAttempts}/${maxReconnectAttempts}`);
+      connectWebSocket();
+    }, delay);
+  }
+
+  function sendWebSocketMessage(message) {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify(message));
+      return true;
+    }
+    return false;
+  }
+
+  // Initialize WebSocket connection
+  connectWebSocket();
 
   // Initialize canvases
   function resize() {
@@ -140,8 +229,7 @@
       buyBtn.textContent = 'Buy';
       buyBtn.disabled = myResources < item.cost;
       buyBtn.addEventListener('click', () => {
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: 'buy', itemId: key }));
+        if (sendWebSocketMessage({ type: 'buy', itemId: key })) {
           showNotification(`Purchased ${key}!`, 'success');
           triggerShake(8, 200);
         }
@@ -260,26 +348,10 @@
     return;
   }
 
-  // Send authentication message immediately after connection
-  ws.onopen = () => {
-    if (isGuest) {
-      // Create a temporary guest player
-      ws.send(JSON.stringify({
-        type: 'authenticate',
-        playerId: playerId,
-        isGuest: true,
-        username: username
-      }));
-    } else {
-      ws.send(JSON.stringify({
-        type: 'authenticate',
-        playerId: playerId
-      }));
-    }
-  };
+  // Authentication logic for guest and registered users
 
-  // WebSocket message handling
-  ws.onmessage = (ev) => {
+  // Handle WebSocket messages
+  function handleWebSocketMessage(ev) {
     let msg;
     try {
       msg = JSON.parse(ev.data);
@@ -329,11 +401,7 @@
           get myResources() { return myResources; },
           get shipProperties() { return shipProperties; },
           get playerInventory() { return playerInventory; },
-          sendWebSocketMessage: (message) => {
-            if (ws.readyState === WebSocket.OPEN) {
-              ws.send(JSON.stringify(message));
-            }
-          }
+          sendWebSocketMessage: sendWebSocketMessage
         };
         
         // Initialize skill system UI
@@ -614,13 +682,24 @@
     }
   };
 
-  ws.onclose = () => {
-    showNotification('Connection lost. Please refresh.', 'error', 5000);
-  };
+  // Authentication function to be called after WebSocket connection
+  function authenticatePlayer() {
+    if (isGuest) {
+      sendWebSocketMessage({
+        type: 'authenticate',
+        playerId: playerId,
+        isGuest: true,
+        username: username
+      });
+    } else {
+      sendWebSocketMessage({
+        type: 'authenticate',
+        playerId: playerId
+      });
+    }
+  }
 
-  ws.onerror = () => {
-    showNotification('Connection error. Please check your network.', 'error');
-  };
+  // Authentication logic for guest and registered users
 
   // Update HUD elements
   function updateHUD() {
@@ -637,7 +716,7 @@
         
         // Request sector info if we haven't received it yet
         if (!currentSectorData) {
-          ws.send(JSON.stringify({ type: 'request_sector_info' }));
+          sendWebSocketMessage({ type: 'request_sector_info' });
         }
       }
     }
@@ -875,15 +954,13 @@
   const mobileInputs = {};
   
   function sendInput() {
-    if (ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({
-        type: 'input',
-        up: keys['KeyW'] || keys['ArrowUp'] || mobileInputs['up'],
-        down: keys['KeyS'] || keys['ArrowDown'] || mobileInputs['down'],
-        left: keys['KeyA'] || keys['ArrowLeft'] || mobileInputs['left'],
-        right: keys['KeyD'] || keys['ArrowRight'] || mobileInputs['right']
-      }));
-    }
+    sendWebSocketMessage({
+      type: 'input',
+      up: keys['KeyW'] || keys['ArrowUp'] || mobileInputs['up'],
+      down: keys['KeyS'] || keys['ArrowDown'] || mobileInputs['down'],
+      left: keys['KeyA'] || keys['ArrowLeft'] || mobileInputs['left'],
+      right: keys['KeyD'] || keys['ArrowRight'] || mobileInputs['right']
+    });
   }
   
   // Mobile control integration
@@ -1027,10 +1104,10 @@
     
     if (distance <= shipProperties.weaponRange && shipProperties.damage > 0) {
       // Fire weapon
-      ws.send(JSON.stringify({
+      sendWebSocketMessage({
         type: 'fire_weapon',
         targetId: selectedTarget
-      }));
+      });
       
       weaponCooldown = 60; // 1 second at 60 FPS
       lastFireTime = Date.now();
@@ -1054,10 +1131,10 @@
     const distance = Math.sqrt(dx * dx + dy * dy);
     
     if (distance <= shipProperties.collectionRange) {
-      ws.send(JSON.stringify({
+      sendWebSocketMessage({
         type: 'collect_ore',
         oreId: ore.id
-      }));
+      });
     }
   }
   
@@ -1111,7 +1188,7 @@
     if (!self || myResources < 50) return;
     const offset = (self.modules.length) * 22;
     const module = { id: 'engine', x: offset, y: 0 };
-    ws.send(JSON.stringify({ type: 'build', module }));
+    sendWebSocketMessage({ type: 'build', module });
     showNotification('Engine module added!', 'success');
     triggerShake(10, 300);
   });
@@ -1121,7 +1198,7 @@
     if (!self || myResources < 30) return;
     const offset = (self.modules.length) * 22;
     const module = { id: 'cargo', x: offset, y: 0 };
-    ws.send(JSON.stringify({ type: 'build', module }));
+    sendWebSocketMessage({ type: 'build', module });
     showNotification('Cargo module added!', 'success');
     triggerShake(8, 250);
   });
@@ -1131,7 +1208,7 @@
     if (!self || myResources < 70) return;
     const offset = (self.modules.length) * 22;
     const module = { id: 'weapon', x: offset, y: 0 };
-    ws.send(JSON.stringify({ type: 'build', module }));
+    sendWebSocketMessage({ type: 'build', module });
     showNotification('Weapon module added!', 'success');
     triggerShake(10, 300);
   });
@@ -1141,7 +1218,7 @@
     if (!self || myResources < 60) return;
     const offset = (self.modules.length) * 22;
     const module = { id: 'shield', x: offset, y: 0 };
-    ws.send(JSON.stringify({ type: 'build', module }));
+    sendWebSocketMessage({ type: 'build', module });
     showNotification('Shield module added!', 'success');
     triggerShake(8, 250);
   });
@@ -1151,7 +1228,7 @@
     if (!self || myResources < 120) return;
     const offset = (self.modules.length) * 22;
     const module = { id: 'reactor', x: offset, y: 0 };
-    ws.send(JSON.stringify({ type: 'build', module }));
+    sendWebSocketMessage({ type: 'build', module });
     showNotification('Reactor module added!', 'success');
     triggerShake(10, 300);
   });
@@ -1164,7 +1241,7 @@
       if (!self || myResources < 150) return;
       const offset = (self.modules.length) * 22;
       const module = { id: 'warp_drive', x: offset, y: 0 };
-      ws.send(JSON.stringify({ type: 'build', module }));
+      sendWebSocketMessage({ type: 'build', module });
       showNotification('Warp drive module added!', 'success');
       triggerShake(10, 300);
       
@@ -1278,13 +1355,11 @@
     createProjectile(self.x, self.y, target.x, target.y, shipProperties.damage);
     
     // Send fire command to server
-    if (ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({
-        type: 'fire',
-        targetId: selectedTarget,
-        damage: shipProperties.damage
-      }));
-    }
+    sendWebSocketMessage({
+      type: 'fire',
+      targetId: selectedTarget,
+      damage: shipProperties.damage
+    });
     
     // Visual and audio feedback
     triggerShake(5, 150);
