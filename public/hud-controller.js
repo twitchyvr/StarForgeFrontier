@@ -9,10 +9,12 @@ class HUDController {
     this.activePanel = null;
     this.isFullscreenMode = false;
     this.mobileMode = window.innerWidth <= 768;
+    this.collapsedStates = this.loadCollapsedStates();
     
     this.init();
     this.setupEventListeners();
     this.setupResponsiveHandling();
+    this.initializeCollapsiblePanels();
   }
   
   init() {
@@ -36,15 +38,18 @@ class HUDController {
       ...config,
       isVisible: false,
       isFullscreen: false,
+      isCollapsed: this.collapsedStates[config.id] || false,
       toggleElement: document.getElementById(config.toggleId),
       panelElement: document.getElementById(config.panelId),
       closeButton: document.getElementById(`${config.id}Close`),
       expandButton: document.getElementById(`${config.id}Expand`),
+      collapseButton: null, // Will be created dynamically
       badge: document.getElementById(`${config.id}Badge`)
     };
     
     this.panels.set(config.id, panel);
     this.setupPanelEventListeners(panel);
+    this.addCollapseButton(panel);
   }
   
   setupPanelEventListeners(panel) {
@@ -105,6 +110,16 @@ class HUDController {
         case 'Tab':
           e.preventDefault();
           this.togglePanel('shop');
+          break;
+        case 'KeyH':
+          e.preventDefault();
+          this.toggleAllPanels();
+          break;
+        case 'KeyC':
+          if (e.ctrlKey) {
+            e.preventDefault();
+            this.collapseAllPanels();
+          }
           break;
         case 'Escape':
           this.hideAllPanels();
@@ -305,6 +320,369 @@ class HUDController {
       });
       
       observer.observe(legacyPanel, { attributes: true });
+    }
+  }
+
+  // =====================================
+  // COLLAPSIBLE PANEL FUNCTIONALITY
+  // =====================================
+
+  loadCollapsedStates() {
+    try {
+      const stored = localStorage.getItem('starforge-panel-states');
+      return stored ? JSON.parse(stored) : {};
+    } catch (e) {
+      console.warn('Failed to load panel states from localStorage:', e);
+      return {};
+    }
+  }
+
+  saveCollapsedStates() {
+    try {
+      localStorage.setItem('starforge-panel-states', JSON.stringify(this.collapsedStates));
+    } catch (e) {
+      console.warn('Failed to save panel states to localStorage:', e);
+    }
+  }
+
+  addCollapseButton(panel) {
+    if (!panel.panelElement) return;
+
+    const header = panel.panelElement.querySelector('.hud-panel-header');
+    if (!header) return;
+
+    const controls = header.querySelector('.hud-panel-controls');
+    if (!controls) return;
+
+    // Create collapse button
+    const collapseBtn = document.createElement('button');
+    collapseBtn.className = 'hud-control-btn collapse-btn';
+    collapseBtn.title = panel.isCollapsed ? 'Expand' : 'Collapse';
+    collapseBtn.innerHTML = panel.isCollapsed ? '📄' : '➖';
+    
+    // Insert before close button
+    const closeBtn = controls.querySelector('.danger');
+    if (closeBtn) {
+      controls.insertBefore(collapseBtn, closeBtn);
+    } else {
+      controls.appendChild(collapseBtn);
+    }
+
+    panel.collapseButton = collapseBtn;
+
+    // Add event listener
+    collapseBtn.addEventListener('click', () => {
+      this.togglePanelCollapse(panel.id);
+    });
+
+    // Apply initial collapsed state
+    if (panel.isCollapsed) {
+      this.applyCollapsedState(panel);
+    }
+  }
+
+  togglePanelCollapse(panelId) {
+    const panel = this.panels.get(panelId);
+    if (!panel) return;
+
+    panel.isCollapsed = !panel.isCollapsed;
+    this.collapsedStates[panelId] = panel.isCollapsed;
+    this.saveCollapsedStates();
+
+    // Update collapse button
+    if (panel.collapseButton) {
+      panel.collapseButton.innerHTML = panel.isCollapsed ? '📄' : '➖';
+      panel.collapseButton.title = panel.isCollapsed ? 'Expand' : 'Collapse';
+    }
+
+    // Apply/remove collapsed state
+    if (panel.isCollapsed) {
+      this.applyCollapsedState(panel);
+    } else {
+      this.removeCollapsedState(panel);
+    }
+  }
+
+  applyCollapsedState(panel) {
+    if (!panel.panelElement) return;
+
+    panel.panelElement.classList.add('collapsed');
+    
+    // Hide content but keep header visible
+    const content = panel.panelElement.querySelector('.hud-panel-content');
+    if (content) {
+      content.style.display = 'none';
+    }
+
+    // Trigger panel-specific collapse logic
+    this.triggerPanelEvent(panel.id, 'collapse');
+  }
+
+  removeCollapsedState(panel) {
+    if (!panel.panelElement) return;
+
+    panel.panelElement.classList.remove('collapsed');
+    
+    // Show content
+    const content = panel.panelElement.querySelector('.hud-panel-content');
+    if (content) {
+      content.style.display = '';
+    }
+
+    // Trigger panel-specific expand logic
+    this.triggerPanelEvent(panel.id, 'expand');
+  }
+
+  collapseAllPanels() {
+    this.panels.forEach((panel, panelId) => {
+      if (!panel.isCollapsed) {
+        this.togglePanelCollapse(panelId);
+      }
+    });
+    
+    // Also collapse main HUD elements
+    this.collapseMainHUDElements();
+  }
+
+  expandAllPanels() {
+    this.panels.forEach((panel, panelId) => {
+      if (panel.isCollapsed) {
+        this.togglePanelCollapse(panelId);
+      }
+    });
+    
+    // Also expand main HUD elements
+    this.expandMainHUDElements();
+  }
+
+  toggleAllPanels() {
+    const hasAnyExpanded = Array.from(this.panels.values()).some(panel => !panel.isCollapsed);
+    
+    if (hasAnyExpanded) {
+      this.collapseAllPanels();
+    } else {
+      this.expandAllPanels();
+    }
+  }
+
+  initializeCollapsiblePanels() {
+    // Initialize main HUD element collapse functionality
+    this.initializeMainHUDCollapse();
+    
+    // Initialize target info auto-hide
+    this.initializeTargetInfoAutoHide();
+  }
+
+  initializeMainHUDCollapse() {
+    // Player stats collapse
+    this.addMainHUDCollapseButton('player-stats', 'Player Stats');
+    
+    // Ship stats collapse
+    this.addMainHUDCollapseButton('ship-stats', 'Ship Stats');
+    
+    // Combat stats collapse
+    this.addMainHUDCollapseButton('combat-stats', 'Combat Stats');
+    
+    // Quick actions collapse
+    this.addMainHUDCollapseButton('quick-actions', 'Actions');
+    
+    // Controls panel collapse
+    this.addControlsPanelCollapse();
+  }
+
+  addMainHUDCollapseButton(sectionClass, title) {
+    const section = document.querySelector(`.hud-section.${sectionClass}`);
+    if (!section) return;
+
+    const isCollapsed = this.collapsedStates[sectionClass] || false;
+
+    // Create header if it doesn't exist
+    let header = section.querySelector('.hud-section-header');
+    if (!header) {
+      header = document.createElement('div');
+      header.className = 'hud-section-header';
+      
+      const titleEl = document.createElement('span');
+      titleEl.className = 'hud-section-title';
+      titleEl.textContent = title;
+      
+      const collapseBtn = document.createElement('button');
+      collapseBtn.className = 'hud-section-collapse-btn';
+      collapseBtn.innerHTML = isCollapsed ? '📊' : '➖';
+      collapseBtn.title = isCollapsed ? 'Expand' : 'Collapse';
+      
+      header.appendChild(titleEl);
+      header.appendChild(collapseBtn);
+      
+      section.insertBefore(header, section.firstChild);
+      
+      // Add click handler
+      collapseBtn.addEventListener('click', () => {
+        const currentlyCollapsed = section.classList.contains('collapsed');
+        
+        if (currentlyCollapsed) {
+          section.classList.remove('collapsed');
+          collapseBtn.innerHTML = '➖';
+          collapseBtn.title = 'Collapse';
+          this.collapsedStates[sectionClass] = false;
+        } else {
+          section.classList.add('collapsed');
+          collapseBtn.innerHTML = '📊';
+          collapseBtn.title = 'Expand';
+          this.collapsedStates[sectionClass] = true;
+        }
+        
+        this.saveCollapsedStates();
+      });
+      
+      // Apply initial collapsed state
+      if (isCollapsed) {
+        section.classList.add('collapsed');
+      }
+    }
+  }
+
+  addControlsPanelCollapse() {
+    const controlsPanel = document.getElementById('controls');
+    if (!controlsPanel) return;
+
+    const isCollapsed = this.collapsedStates['controls'] || false;
+
+    // Create hamburger menu for collapsed state
+    if (!document.getElementById('controls-hamburger')) {
+      const hamburger = document.createElement('div');
+      hamburger.id = 'controls-hamburger';
+      hamburger.className = 'controls-hamburger';
+      hamburger.innerHTML = `
+        <div class="hamburger-icon">
+          <span></span>
+          <span></span>
+          <span></span>
+        </div>
+        <span class="hamburger-label">Controls</span>
+      `;
+      
+      hamburger.style.display = isCollapsed ? 'flex' : 'none';
+      controlsPanel.parentNode.insertBefore(hamburger, controlsPanel);
+      
+      // Add click handler to toggle
+      hamburger.addEventListener('click', () => {
+        this.toggleControlsPanel();
+      });
+    }
+
+    // Create collapse button for controls panel
+    let collapseBtn = controlsPanel.querySelector('.controls-collapse-btn');
+    if (!collapseBtn) {
+      collapseBtn = document.createElement('button');
+      collapseBtn.className = 'controls-collapse-btn';
+      collapseBtn.innerHTML = '✕';
+      collapseBtn.title = 'Collapse to hamburger menu';
+      
+      const title = controlsPanel.querySelector('.help-title');
+      if (title) {
+        title.appendChild(collapseBtn);
+      }
+      
+      collapseBtn.addEventListener('click', () => {
+        this.toggleControlsPanel();
+      });
+    }
+
+    // Apply initial state
+    if (isCollapsed) {
+      controlsPanel.style.display = 'none';
+    }
+  }
+
+  toggleControlsPanel() {
+    const controlsPanel = document.getElementById('controls');
+    const hamburger = document.getElementById('controls-hamburger');
+    
+    if (!controlsPanel || !hamburger) return;
+
+    const isCurrentlyCollapsed = controlsPanel.style.display === 'none';
+    
+    if (isCurrentlyCollapsed) {
+      controlsPanel.style.display = '';
+      hamburger.style.display = 'none';
+      this.collapsedStates['controls'] = false;
+    } else {
+      controlsPanel.style.display = 'none';
+      hamburger.style.display = 'flex';
+      this.collapsedStates['controls'] = true;
+    }
+    
+    this.saveCollapsedStates();
+  }
+
+  initializeTargetInfoAutoHide() {
+    // Monitor target name changes to auto-hide/show
+    const targetNameEl = document.getElementById('selectedTargetName');
+    if (!targetNameEl) return;
+
+    const observer = new MutationObserver((mutations) => {
+      mutations.forEach((mutation) => {
+        if (mutation.type === 'childList' || mutation.type === 'characterData') {
+          const hasTarget = targetNameEl.textContent.trim() !== 'No Target';
+          const weaponStatus = document.querySelector('.hud-section.weapon-status');
+          
+          if (weaponStatus) {
+            if (hasTarget) {
+              weaponStatus.classList.remove('auto-hidden');
+            } else {
+              weaponStatus.classList.add('auto-hidden');
+            }
+          }
+        }
+      });
+    });
+
+    observer.observe(targetNameEl, { 
+      childList: true, 
+      characterData: true, 
+      subtree: true 
+    });
+
+    // Initial check
+    const hasTarget = targetNameEl.textContent.trim() !== 'No Target';
+    const weaponStatus = document.querySelector('.hud-section.weapon-status');
+    if (weaponStatus && !hasTarget) {
+      weaponStatus.classList.add('auto-hidden');
+    }
+  }
+
+  collapseMainHUDElements() {
+    ['player-stats', 'ship-stats', 'combat-stats', 'quick-actions'].forEach(sectionClass => {
+      const section = document.querySelector(`.hud-section.${sectionClass}`);
+      const btn = section?.querySelector('.hud-section-collapse-btn');
+      
+      if (section && !section.classList.contains('collapsed')) {
+        btn?.click();
+      }
+    });
+    
+    // Collapse controls to hamburger
+    const controlsPanel = document.getElementById('controls');
+    if (controlsPanel && controlsPanel.style.display !== 'none') {
+      this.toggleControlsPanel();
+    }
+  }
+
+  expandMainHUDElements() {
+    ['player-stats', 'ship-stats', 'combat-stats', 'quick-actions'].forEach(sectionClass => {
+      const section = document.querySelector(`.hud-section.${sectionClass}`);
+      const btn = section?.querySelector('.hud-section-collapse-btn');
+      
+      if (section && section.classList.contains('collapsed')) {
+        btn?.click();
+      }
+    });
+    
+    // Expand controls from hamburger
+    const controlsPanel = document.getElementById('controls');
+    if (controlsPanel && controlsPanel.style.display === 'none') {
+      this.toggleControlsPanel();
     }
   }
 }
