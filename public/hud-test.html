@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HUD System Test - StarForge Frontier</title>
+  <link rel="stylesheet" href="hud-system.css">
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background: radial-gradient(circle at center, #0a1931 0%, #010a16 100%);
+      color: white;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      overflow: hidden;
+    }
+    
+    .test-game-canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: repeating-linear-gradient(
+        45deg,
+        rgba(255,255,255,0.02),
+        rgba(255,255,255,0.02) 10px,
+        transparent 10px,
+        transparent 20px
+      );
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      color: rgba(255,255,255,0.5);
+      z-index: 1;
+    }
+    
+    .test-controls {
+      position: absolute;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.8);
+      padding: 10px 20px;
+      border-radius: 20px;
+      border: 1px solid rgba(255,255,255,0.2);
+      z-index: 1000;
+      display: flex;
+      gap: 10px;
+    }
+    
+    .test-btn {
+      padding: 6px 12px;
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.2);
+      color: white;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+      transition: all 0.2s ease;
+    }
+    
+    .test-btn:hover {
+      background: rgba(255,255,255,0.2);
+    }
+  </style>
+</head>
+<body>
+  <div class="test-game-canvas">
+    <div>🚀 GAME CANVAS AREA (UNOBSTRUCTED) 🚀</div>
+  </div>
+  
+  <div class="test-controls">
+    <button class="test-btn" onclick="testAllPanels()">Show All Panels</button>
+    <button class="test-btn" onclick="hideAllPanels()">Hide All Panels</button>
+    <button class="test-btn" onclick="testMobileMode()">Test Mobile</button>
+    <button class="test-btn" onclick="populateTestData()">Load Test Data</button>
+  </div>
+
+  <!-- HUD System Container -->
+  <div class="hud-container">
+    
+    <!-- HUD Toggle Buttons -->
+    <div class="hud-toggles-right hud-toggle-container">
+      <div class="hud-toggle-btn" id="factionToggle">
+        <span class="hud-toggle-icon">⚔️</span>
+        <span class="hud-toggle-label">Factions</span>
+        <span class="hud-toggle-badge" id="factionBadge"></span>
+      </div>
+      <div class="hud-toggle-btn" id="skillsToggle">
+        <span class="hud-toggle-icon">🎯</span>
+        <span class="hud-toggle-label">Skills</span>
+        <span class="hud-toggle-badge" id="skillsBadge"></span>
+      </div>
+    </div>
+    
+    <div class="hud-toggles-left hud-toggle-container">
+      <div class="hud-toggle-btn" id="guildToggle">
+        <span class="hud-toggle-icon">🛡️</span>
+        <span class="hud-toggle-label">Guild</span>
+        <span class="hud-toggle-badge" id="guildBadge"></span>
+      </div>
+    </div>
+    
+    <div class="hud-toggles-top hud-toggle-container">
+      <div class="hud-toggle-btn" id="researchToggle">
+        <span class="hud-toggle-icon">🔬</span>
+        <span class="hud-toggle-label">Research</span>
+        <span class="hud-toggle-badge" id="researchBadge"></span>
+      </div>
+    </div>
+    
+    <div class="hud-toggles-bottom hud-toggle-container">
+      <div class="hud-toggle-btn" id="tradingToggle">
+        <span class="hud-toggle-icon">💰</span>
+        <span class="hud-toggle-label">Trading</span>
+        <span class="hud-toggle-badge" id="tradingBadge"></span>
+      </div>
+      <div class="hud-toggle-btn" id="shopToggleNew">
+        <span class="hud-toggle-icon">🛒</span>
+        <span class="hud-toggle-label">Shop</span>
+      </div>
+    </div>
+    
+    <!-- HUD Panels -->
+    
+    <!-- Faction Panel - Right Side -->
+    <div class="hud-panel right faction-panel" id="factionHudPanel">
+      <div class="hud-panel-header">
+        <span class="hud-panel-title">Faction Relations</span>
+        <div class="hud-panel-controls">
+          <button class="hud-control-btn" id="factionRefresh" title="Refresh">🔄</button>
+          <button class="hud-control-btn danger" id="factionClose" title="Close">×</button>
+        </div>
+      </div>
+      <div class="hud-panel-content hud-scrollbar">
+        <div id="factionContent">
+          <div class="hud-text-center hud-opacity-75">Loading faction data...</div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Guild Panel - Left Side -->
+    <div class="hud-panel left guild-panel" id="guildHudPanel">
+      <div class="hud-panel-header">
+        <span class="hud-panel-title">Guild Management</span>
+        <div class="hud-panel-controls">
+          <button class="hud-control-btn" id="guildRefresh" title="Refresh">🔄</button>
+          <button class="hud-control-btn danger" id="guildClose" title="Close">×</button>
+        </div>
+      </div>
+      <div class="hud-panel-content hud-scrollbar">
+        <div class="guild-quick-actions">
+          <button class="guild-action-btn" id="createGuild">Create</button>
+          <button class="guild-action-btn" id="joinGuild">Join</button>
+          <button class="guild-action-btn" id="guildHalls">Halls</button>
+        </div>
+        <div id="guildContent">
+          <div class="hud-text-center hud-opacity-75">Loading guild data...</div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Skills Panel - Top Right -->
+    <div class="hud-panel right skills-panel" id="skillsHudPanel">
+      <div class="hud-panel-header">
+        <span class="hud-panel-title">Skill Development</span>
+        <div class="hud-panel-controls">
+          <button class="hud-control-btn" id="skillsExpand" title="Full View">⛶</button>
+          <button class="hud-control-btn danger" id="skillsClose" title="Close">×</button>
+        </div>
+      </div>
+      <div class="hud-panel-content hud-scrollbar">
+        <div class="skill-tree-compact" id="skillsContent">
+          <div class="hud-text-center hud-opacity-75">Loading skill data...</div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Research Panel - Top -->
+    <div class="hud-panel top research-panel" id="researchHudPanel">
+      <div class="hud-panel-header">
+        <span class="hud-panel-title">Research & Technology</span>
+        <div class="hud-panel-controls">
+          <button class="hud-control-btn" id="researchExpand" title="Full View">⛶</button>
+          <button class="hud-control-btn danger" id="researchClose" title="Close">×</button>
+        </div>
+      </div>
+      <div class="hud-panel-content hud-scrollbar">
+        <div class="research-tabs">
+          <button class="research-tab active" data-tab="active">Active</button>
+          <button class="research-tab" data-tab="available">Available</button>
+          <button class="research-tab" data-tab="completed">Completed</button>
+        </div>
+        <div id="researchContent">
+          <div class="hud-text-center hud-opacity-75">Loading research data...</div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Trading Panel - Bottom -->
+    <div class="hud-panel bottom trading-panel" id="tradingHudPanel">
+      <div class="hud-panel-header">
+        <span class="hud-panel-title">Trading & Commerce</span>
+        <div class="hud-panel-controls">
+          <button class="hud-control-btn" id="tradingExpand" title="Full View">⛶</button>
+          <button class="hud-control-btn danger" id="tradingClose" title="Close">×</button>
+        </div>
+      </div>
+      <div class="hud-panel-content hud-scrollbar">
+        <div class="trading-tabs">
+          <button class="trading-tab active" data-tab="stations">Stations</button>
+          <button class="trading-tab" data-tab="market">Market</button>
+          <button class="trading-tab" data-tab="contracts">Contracts</button>
+        </div>
+        <div id="tradingContent">
+          <div class="hud-text-center hud-opacity-75">Loading trading data...</div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Shop Panel - Bottom -->
+    <div class="hud-panel bottom" id="shopHudPanel">
+      <div class="hud-panel-header">
+        <span class="hud-panel-title">Space Shop</span>
+        <div class="hud-panel-controls">
+          <button class="hud-control-btn" id="shopRefresh" title="Refresh">🔄</button>
+          <button class="hud-control-btn danger" id="shopCloseNew" title="Close">×</button>
+        </div>
+      </div>
+      <div class="hud-panel-content hud-scrollbar">
+        <div id="shopContent">
+          <div class="hud-text-center hud-opacity-75">Loading shop inventory...</div>
+        </div>
+      </div>
+    </div>
+    
+  </div>
+
+  <script src="hud-controller.js"></script>
+  <script>
+    // Test functions
+    function testAllPanels() {
+      ['faction', 'guild', 'skills', 'research', 'trading'].forEach(panel => {
+        window.hudController.showPanel(panel);
+      });
+    }
+    
+    function hideAllPanels() {
+      window.hudController.hideAllPanels();
+    }
+    
+    function testMobileMode() {
+      document.body.style.maxWidth = '768px';
+      document.body.style.transform = 'scale(0.8)';
+      document.body.style.transformOrigin = 'top left';
+    }
+    
+    function populateTestData() {
+      // Populate faction panel with test data
+      const factionData = [
+        { id: 1, name: 'Trade Federation', reputation: 750, type: 'Commercial' },
+        { id: 2, name: 'Explorer Guild', reputation: 250, type: 'Scientific' },
+        { id: 3, name: 'Pirate Syndicate', reputation: -800, type: 'Criminal' }
+      ];
+      
+      // Simulate faction data update
+      document.dispatchEvent(new CustomEvent('factionsUpdated', { detail: factionData }));
+      
+      // Set some badges
+      window.hudController.setBadge('faction', 1);
+      window.hudController.setBadge('trading', 3);
+      window.hudController.setBadge('research', 2);
+      
+      // Show test content in panels
+      setTimeout(() => {
+        const guildContent = document.getElementById('guildContent');
+        if (guildContent) {
+          guildContent.innerHTML = `
+            <div style="text-align: center; padding: 20px;">
+              <div style="font-size: 32px; margin-bottom: 12px;">🛡️</div>
+              <div style="font-size: 12px; margin-bottom: 8px;">No Guild Membership</div>
+              <div style="font-size: 10px;">Test data loaded successfully!</div>
+            </div>
+          `;
+        }
+        
+        const tradingContent = document.getElementById('tradingContent');
+        if (tradingContent) {
+          tradingContent.innerHTML = `
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+              <div style="padding: 8px; background: rgba(255,255,255,0.05); border-radius: 6px; border-left: 2px solid #28a745;">
+                <div style="display: flex; justify-content: space-between;">
+                  <div style="font-weight: 600; color: white;">Station Alpha</div>
+                  <div style="color: #28a745; font-size: 10px;">IN RANGE</div>
+                </div>
+                <div style="font-size: 10px; color: #ccc;">Trading Post • Sector 0,0</div>
+              </div>
+              <div style="padding: 8px; background: rgba(255,255,255,0.05); border-radius: 6px; border-left: 2px solid #fd7e14;">
+                <div style="display: flex; justify-content: space-between;">
+                  <div style="font-weight: 600; color: white;">Mining Outpost</div>
+                  <div style="color: #fd7e14; font-size: 10px;">2.5km</div>
+                </div>
+                <div style="font-size: 10px; color: #ccc;">Industrial • Sector 1,0</div>
+              </div>
+            </div>
+          `;
+        }
+      }, 500);
+    }
+    
+    // Auto-populate test data after a moment
+    setTimeout(populateTestData, 1000);
+  </script>
+</body>
+</html>
