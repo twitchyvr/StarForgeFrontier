@@ -248,6 +248,20 @@ class EnhancedSectorManager {
   }
 
   /**
+   * Get player's current sector coordinates
+   */
+  getPlayerSector(playerId) {
+    const playerData = this.playerSectors.get(playerId);
+    if (!playerData) return null;
+    
+    return {
+      x: playerData.sectorX,
+      y: playerData.sectorY,
+      position: playerData.position
+    };
+  }
+
+  /**
    * Process hazard effects for a specific player
    */
   async processPlayerHazardEffects(playerId, playerData) {
