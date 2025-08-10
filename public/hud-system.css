@@ -4,9 +4,9 @@
  */
 
 :root {
-  --hud-bg: rgba(13, 27, 42, 0.95);
-  --hud-panel-bg: rgba(20, 39, 61, 0.9);
-  --hud-border: rgba(100, 200, 255, 0.3);
+  --hud-bg: rgba(13, 27, 42, 0.3);
+  --hud-panel-bg: rgba(20, 39, 61, 0.25);
+  --hud-border: rgba(100, 200, 255, 0.2);
   --hud-text: #ffffff;
   --hud-text-secondary: rgba(255, 255, 255, 0.7);
   --hud-accent: #64c8ff;
@@ -14,8 +14,8 @@
   --hud-warning: #ffc107;
   --hud-danger: #dc3545;
   
-  --hud-panel-width: 320px;
-  --hud-panel-height: 250px;
+  --hud-panel-width: 280px;
+  --hud-panel-height: 200px;
   --hud-edge-padding: 15px;
   --hud-transition: all 0.3s cubic-bezier(0.4, 0.0, 0.2, 1);
 }
@@ -41,14 +41,19 @@
   position: absolute;
   background: var(--hud-bg);
   border: 1px solid var(--hud-border);
-  border-radius: 12px;
+  border-radius: 8px;
   backdrop-filter: blur(15px);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
   opacity: 0;
   transform: translateX(100%);
   transition: var(--hud-transition);
   pointer-events: auto;
   overflow: hidden;
+}
+
+.hud-panel:hover {
+  background: rgba(13, 27, 42, 0.5);
+  border-color: rgba(100, 200, 255, 0.4);
 }
 
 .hud-panel.visible {
@@ -57,8 +62,8 @@
 }
 
 .hud-panel.collapsed {
-  opacity: 0.8;
-  transform: scale(0.95) translateX(50%);
+  opacity: 0.6;
+  transform: scale(0.95) translateX(30%);
 }
 
 /* Panel Header */
@@ -66,15 +71,15 @@
   display: flex;
   align-items: center;
   justify-content: between;
-  padding: 12px 16px;
+  padding: 8px 12px;
   background: var(--hud-panel-bg);
   border-bottom: 1px solid var(--hud-border);
-  border-radius: 12px 12px 0 0;
+  border-radius: 8px 8px 0 0;
 }
 
 .hud-panel-title {
   flex: 1;
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--hud-accent);
   text-transform: uppercase;
@@ -87,17 +92,17 @@
 }
 
 .hud-control-btn {
-  width: 24px;
-  height: 24px;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 4px;
+  width: 20px;
+  height: 20px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
   color: var(--hud-text-secondary);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
+  font-size: 10px;
   transition: var(--hud-transition);
 }
 
@@ -114,8 +119,8 @@
 
 /* Panel Content */
 .hud-panel-content {
-  padding: 16px;
-  max-height: calc(100vh - 120px);
+  padding: 12px;
+  max-height: calc(100vh - 80px);
   overflow-y: auto;
 }
 
@@ -226,11 +231,11 @@
 }
 
 .hud-toggle-btn {
-  width: 48px;
-  height: 48px;
+  width: 40px;
+  height: 40px;
   background: var(--hud-bg);
   border: 1px solid var(--hud-border);
-  border-radius: 12px;
+  border-radius: 8px;
   color: var(--hud-text-secondary);
   cursor: pointer;
   display: flex;
@@ -249,7 +254,7 @@
   color: var(--hud-accent);
   border-color: var(--hud-accent);
   transform: scale(1.05);
-  box-shadow: 0 4px 16px rgba(100, 200, 255, 0.3);
+  box-shadow: 0 2px 12px rgba(100, 200, 255, 0.2);
 }
 
 .hud-toggle-btn.active {
@@ -259,16 +264,16 @@
 }
 
 .hud-toggle-icon {
-  font-size: 18px;
+  font-size: 16px;
   line-height: 1;
-  margin-bottom: 2px;
+  margin-bottom: 1px;
 }
 
 .hud-toggle-label {
-  font-size: 8px;
+  font-size: 7px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.3px;
   opacity: 0.8;
 }
 
@@ -458,30 +463,30 @@
 
 @media (max-width: 1200px) {
   :root {
-    --hud-panel-width: 280px;
-    --hud-panel-height: 200px;
+    --hud-panel-width: 250px;
+    --hud-panel-height: 180px;
   }
   
   .hud-panel.faction-panel,
   .hud-panel.guild-panel,
   .hud-panel.skills-panel {
-    width: 280px;
+    width: 250px;
   }
 }
 
 @media (max-width: 768px) {
   :root {
     --hud-panel-width: 90vw;
-    --hud-edge-padding: 10px;
+    --hud-edge-padding: 8px;
   }
   
   .hud-toggle-btn {
-    width: 40px;
-    height: 40px;
+    width: 32px;
+    height: 32px;
   }
   
   .hud-toggle-icon {
-    font-size: 16px;
+    font-size: 14px;
   }
   
   .hud-toggle-label {
@@ -492,11 +497,12 @@
   .hud-panel.right,
   .hud-panel.left {
     top: auto;
-    bottom: 60px;
+    bottom: 50px;
     left: 50%;
     transform: translateX(-50%) translateY(100%);
     width: 90vw;
     max-width: none;
+    max-height: 60vh;
   }
   
   .hud-panel.right.visible,
@@ -513,6 +519,12 @@
   
   .hud-panel.skills-panel.visible {
     transform: translateX(-50%) translateY(0);
+  }
+  
+  .hud-panel.top,
+  .hud-panel.bottom {
+    width: 95vw;
+    max-height: 50vh;
   }
 }
 
