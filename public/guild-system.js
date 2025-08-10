@@ -532,14 +532,32 @@ class GuildSystemUI {
   }
 
   /**
+   * Get authentication headers for API requests
+   */
+  getAuthHeaders() {
+    const headers = { 'Content-Type': 'application/json' };
+    
+    // Try token authentication first
+    const token = localStorage.getItem('token');
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    } else {
+      // For guests, use the player ID from the game client
+      if (window.gameClient && window.gameClient.playerId) {
+        headers['X-Player-Id'] = window.gameClient.playerId;
+      }
+    }
+    
+    return headers;
+  }
+
+  /**
    * Load player's guild data
    */
   async loadPlayerGuild() {
     try {
       const response = await fetch('/api/guild/my-guild', {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
+        headers: this.getAuthHeaders()
       });
 
       if (response.ok) {
@@ -728,9 +746,7 @@ class GuildSystemUI {
 
     try {
       const response = await fetch(`/api/guild/${this.playerGuild.id}/members`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
+        headers: this.getAuthHeaders()
       });
 
       if (response.ok) {
@@ -824,12 +840,10 @@ class GuildSystemUI {
     };
 
     try {
+      const headers = this.getAuthHeaders();
       const response = await fetch('/api/guild/create', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
+        headers: headers,
         body: JSON.stringify(formData)
       });
 
@@ -889,9 +903,7 @@ class GuildSystemUI {
 
     try {
       const response = await fetch(`/api/guild/${this.playerGuild.id}/events?limit=5`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
+        headers: this.getAuthHeaders()
       });
 
       if (response.ok) {

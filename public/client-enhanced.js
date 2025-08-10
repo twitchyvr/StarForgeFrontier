@@ -324,6 +324,7 @@
         // Connect trading UI to game client for access to player data
         window.gameClient = {
           get myId() { return myId; },
+          get playerId() { return myId; }, // Add playerId for guild system
           get players() { return players; },
           get myResources() { return myResources; },
           get shipProperties() { return shipProperties; },
