@@ -12,6 +12,13 @@ active_issues:
   - issue_19_research_tech_trees: Pending
   - issue_20_mobile_pwa: Pending
 
+# Recent Sprint Actions
+recent_decisions:
+  - action: "PR #44 Closed - Server crash fix deferred"
+    rationale: "Production stable, empty WIP PR, higher priorities available"
+    date: "2025-08-10"
+    impact: "Resources freed for PR #35 (server optimization) and PR #33 (environmental hazards)"
+
 # Phase Status
 phases:
   phase_0_strategic: Complete
