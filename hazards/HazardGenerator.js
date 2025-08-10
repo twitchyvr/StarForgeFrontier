@@ -252,6 +252,102 @@ const DYNAMIC_EVENTS = {
       existingHazards: ['WORMHOLE'],
       probability: 0.2
     }
+  },
+  
+  // Emergency Scenarios
+  distress_call: {
+    name: 'Distress Call',
+    description: 'Emergency beacon detected - rescue mission available',
+    duration: { min: 300000, max: 900000 }, // 5-15 minutes
+    affectedRadius: 1,
+    hazardTypes: [], // No additional hazards, this is a mission event
+    triggerConditions: {
+      playerActivity: 'medium',
+      probability: 0.3
+    },
+    missionType: 'rescue',
+    rewards: {
+      experience: 150,
+      resources: 200,
+      reputation: 50
+    }
+  },
+  
+  evacuation_mission: {
+    name: 'Colony Evacuation',
+    description: 'Civilian colony under threat requires immediate evacuation',
+    duration: { min: 600000, max: 1200000 }, // 10-20 minutes
+    affectedRadius: 2,
+    hazardTypes: ['SOLAR_FLARE', 'COSMIC_RADIATION'], // Hazards threatening the colony
+    triggerConditions: {
+      biomes: ['STELLAR_NURSERY', 'ASTEROID_FIELD'],
+      playerActivity: 'high',
+      probability: 0.15
+    },
+    missionType: 'evacuation',
+    rewards: {
+      experience: 300,
+      resources: 500,
+      reputation: 100,
+      civiliansToEvacuate: 50
+    }
+  },
+  
+  disaster_response: {
+    name: 'Disaster Response',
+    description: 'Natural disaster requires immediate humanitarian aid',
+    duration: { min: 900000, max: 1800000 }, // 15-30 minutes
+    affectedRadius: 3,
+    hazardTypes: ['GRAVITATIONAL_ANOMALY', 'ASTEROID_FIELD'], // Disaster effects
+    triggerConditions: {
+      biomes: ['BLACK_HOLE_REGION', 'ASTEROID_FIELD'],
+      probability: 0.1
+    },
+    missionType: 'disaster_relief',
+    rewards: {
+      experience: 400,
+      resources: 750,
+      reputation: 150,
+      suppliesNeeded: 100
+    }
+  },
+  
+  pirate_raid_response: {
+    name: 'Pirate Raid Emergency',
+    description: 'Trading convoy under pirate attack needs assistance',
+    duration: { min: 180000, max: 480000 }, // 3-8 minutes
+    affectedRadius: 1,
+    hazardTypes: [], // Combat scenario, not environmental
+    triggerConditions: {
+      biomes: ['DEEP_SPACE'],
+      playerActivity: 'high',
+      probability: 0.25
+    },
+    missionType: 'combat_assistance',
+    rewards: {
+      experience: 250,
+      resources: 400,
+      reputation: 75,
+      pirates: 3
+    }
+  },
+  
+  medical_emergency: {
+    name: 'Medical Emergency',
+    description: 'Critical medical supplies needed for plague outbreak',
+    duration: { min: 1200000, max: 2400000 }, // 20-40 minutes
+    affectedRadius: 2,
+    hazardTypes: ['COSMIC_RADIATION'], // Radiation causing the medical issues
+    triggerConditions: {
+      probability: 0.08
+    },
+    missionType: 'medical_supply',
+    rewards: {
+      experience: 350,
+      resources: 600,
+      reputation: 120,
+      medicalSuppliesNeeded: 25
+    }
   }
 };
 
@@ -1155,6 +1251,319 @@ class HazardGenerator {
     }
 
     return stats;
+  }
+
+  /**
+   * Handle emergency scenario events
+   */
+  async handleEmergencyScenario(eventType, eventData) {
+    const eventDef = DYNAMIC_EVENTS[eventType];
+    if (!eventDef || !eventDef.missionType) {
+      return null;
+    }
+
+    const scenario = {
+      id: eventData.id,
+      type: eventType,
+      missionType: eventDef.missionType,
+      name: eventDef.name,
+      description: eventDef.description,
+      location: eventData.centerSector,
+      rewards: eventDef.rewards,
+      status: 'active',
+      participants: [],
+      progress: 0,
+      createdAt: Date.now(),
+      expiresAt: eventData.expiresAt,
+      metadata: this.generateScenarioMetadata(eventDef)
+    };
+
+    // Store in database
+    if (this.database) {
+      await this.database.createDynamicHazardEvent({
+        id: scenario.id,
+        event_type: eventType,
+        event_name: scenario.name,
+        center_sector_x: scenario.location.x,
+        center_sector_y: scenario.location.y,
+        affected_radius: eventDef.affectedRadius,
+        intensity: 1.0,
+        created_at: Date.now(),
+        expires_at: scenario.expiresAt,
+        event_data: {
+          mission_type: eventDef.missionType,
+          mission_data: scenario.metadata,
+          rewards: eventDef.rewards
+        },
+        affected_sectors: [scenario.location]
+      });
+    }
+
+    return scenario;
+  }
+
+  /**
+   * Generate scenario-specific metadata
+   */
+  generateScenarioMetadata(eventDef) {
+    const metadata = {};
+
+    switch (eventDef.missionType) {
+      case 'rescue':
+        metadata.survivors = 1 + Math.floor(Math.random() * 5);
+        metadata.difficulty = ['easy', 'medium', 'hard'][Math.floor(Math.random() * 3)];
+        metadata.rescueShipType = ['civilian_transport', 'research_vessel', 'cargo_freighter'][Math.floor(Math.random() * 3)];
+        break;
+
+      case 'evacuation':
+        metadata.civiliansToEvacuate = eventDef.rewards.civiliansToEvacuate;
+        metadata.colonyType = ['mining_outpost', 'research_station', 'agricultural_colony'][Math.floor(Math.random() * 3)];
+        metadata.threatLevel = ['moderate', 'severe', 'critical'][Math.floor(Math.random() * 3)];
+        metadata.evacuationShipsRequired = Math.ceil(metadata.civiliansToEvacuate / 10);
+        break;
+
+      case 'disaster_relief':
+        metadata.suppliesNeeded = eventDef.rewards.suppliesNeeded;
+        metadata.disasterType = ['earthquake', 'volcanic_eruption', 'meteor_impact'][Math.floor(Math.random() * 3)];
+        metadata.affectedPopulation = 100 + Math.floor(Math.random() * 500);
+        metadata.urgencyLevel = ['high', 'critical'][Math.floor(Math.random() * 2)];
+        break;
+
+      case 'combat_assistance':
+        metadata.pirateCount = eventDef.rewards.pirates;
+        metadata.convoySize = 2 + Math.floor(Math.random() * 4);
+        metadata.cargoValue = 1000 + Math.floor(Math.random() * 5000);
+        metadata.pirateShipTypes = ['fighter', 'raider', 'destroyer'];
+        break;
+
+      case 'medical_supply':
+        metadata.medicalSuppliesNeeded = eventDef.rewards.medicalSuppliesNeeded;
+        metadata.plagueType = ['radiation_sickness', 'alien_pathogen', 'genetic_disorder'][Math.floor(Math.random() * 3)];
+        metadata.infectedPopulation = 50 + Math.floor(Math.random() * 200);
+        metadata.timeRemaining = eventDef.duration.min;
+        break;
+    }
+
+    return metadata;
+  }
+
+  /**
+   * Process emergency scenario participation
+   */
+  async processScenarioParticipation(scenarioId, playerId, actionType, actionData) {
+    const scenario = this.dynamicEvents.get(scenarioId);
+    if (!scenario || scenario.status !== 'active') {
+      return { success: false, message: 'Scenario not found or inactive' };
+    }
+
+    const result = { success: false, message: 'Unknown error', rewards: null };
+
+    switch (scenario.missionType) {
+      case 'rescue':
+        result = await this.processRescueMission(scenario, playerId, actionType, actionData);
+        break;
+
+      case 'evacuation':
+        result = await this.processEvacuationMission(scenario, playerId, actionType, actionData);
+        break;
+
+      case 'disaster_relief':
+        result = await this.processDisasterReliefMission(scenario, playerId, actionType, actionData);
+        break;
+
+      case 'combat_assistance':
+        result = await this.processCombatAssistance(scenario, playerId, actionType, actionData);
+        break;
+
+      case 'medical_supply':
+        result = await this.processMedicalSupplyMission(scenario, playerId, actionType, actionData);
+        break;
+    }
+
+    // Update scenario progress
+    if (result.success) {
+      scenario.progress += result.progressIncrease || 0;
+      
+      if (!scenario.participants.includes(playerId)) {
+        scenario.participants.push(playerId);
+      }
+
+      // Check if scenario is completed
+      if (scenario.progress >= 100) {
+        scenario.status = 'completed';
+        await this.completeScenario(scenario);
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Process rescue mission actions
+   */
+  async processRescueMission(scenario, playerId, actionType, actionData) {
+    if (actionType === 'rescue_survivors') {
+      const rescued = Math.min(actionData.capacity || 5, scenario.metadata.survivors);
+      scenario.metadata.survivors -= rescued;
+      
+      const progressIncrease = (rescued / (scenario.metadata.survivors + rescued)) * 100;
+      
+      return {
+        success: true,
+        message: `Rescued ${rescued} survivors`,
+        progressIncrease,
+        rewards: {
+          experience: Math.floor(scenario.rewards.experience * (rescued / 5)),
+          resources: Math.floor(scenario.rewards.resources * (rescued / 5)),
+          reputation: Math.floor(scenario.rewards.reputation * (rescued / 5))
+        }
+      };
+    }
+    
+    return { success: false, message: 'Invalid rescue action' };
+  }
+
+  /**
+   * Process evacuation mission actions
+   */
+  async processEvacuationMission(scenario, playerId, actionType, actionData) {
+    if (actionType === 'evacuate_civilians') {
+      const evacuated = Math.min(actionData.capacity || 10, scenario.metadata.civiliansToEvacuate);
+      scenario.metadata.civiliansToEvacuate -= evacuated;
+      
+      const progressIncrease = (evacuated / (scenario.metadata.civiliansToEvacuate + evacuated)) * 100;
+      
+      return {
+        success: true,
+        message: `Evacuated ${evacuated} civilians`,
+        progressIncrease,
+        rewards: {
+          experience: Math.floor(scenario.rewards.experience * (evacuated / 50)),
+          resources: Math.floor(scenario.rewards.resources * (evacuated / 50)),
+          reputation: Math.floor(scenario.rewards.reputation * (evacuated / 50))
+        }
+      };
+    }
+    
+    return { success: false, message: 'Invalid evacuation action' };
+  }
+
+  /**
+   * Process disaster relief mission actions
+   */
+  async processDisasterReliefMission(scenario, playerId, actionType, actionData) {
+    if (actionType === 'deliver_supplies') {
+      const delivered = Math.min(actionData.supplies || 10, scenario.metadata.suppliesNeeded);
+      scenario.metadata.suppliesNeeded -= delivered;
+      
+      const progressIncrease = (delivered / (scenario.metadata.suppliesNeeded + delivered)) * 100;
+      
+      return {
+        success: true,
+        message: `Delivered ${delivered} supply units`,
+        progressIncrease,
+        rewards: {
+          experience: Math.floor(scenario.rewards.experience * (delivered / 100)),
+          resources: Math.floor(scenario.rewards.resources * (delivered / 100)),
+          reputation: Math.floor(scenario.rewards.reputation * (delivered / 100))
+        }
+      };
+    }
+    
+    return { success: false, message: 'Invalid relief action' };
+  }
+
+  /**
+   * Process combat assistance actions
+   */
+  async processCombatAssistance(scenario, playerId, actionType, actionData) {
+    if (actionType === 'defeat_pirates') {
+      const defeated = Math.min(actionData.defeated || 1, scenario.metadata.pirateCount);
+      scenario.metadata.pirateCount -= defeated;
+      
+      const progressIncrease = (defeated / (scenario.metadata.pirateCount + defeated)) * 100;
+      
+      return {
+        success: true,
+        message: `Defeated ${defeated} pirate ships`,
+        progressIncrease,
+        rewards: {
+          experience: Math.floor(scenario.rewards.experience * (defeated / 3)),
+          resources: Math.floor(scenario.rewards.resources * (defeated / 3)),
+          reputation: Math.floor(scenario.rewards.reputation * (defeated / 3))
+        }
+      };
+    }
+    
+    return { success: false, message: 'Invalid combat action' };
+  }
+
+  /**
+   * Process medical supply mission actions
+   */
+  async processMedicalSupplyMission(scenario, playerId, actionType, actionData) {
+    if (actionType === 'deliver_medical_supplies') {
+      const delivered = Math.min(actionData.supplies || 5, scenario.metadata.medicalSuppliesNeeded);
+      scenario.metadata.medicalSuppliesNeeded -= delivered;
+      
+      const progressIncrease = (delivered / (scenario.metadata.medicalSuppliesNeeded + delivered)) * 100;
+      
+      return {
+        success: true,
+        message: `Delivered ${delivered} medical supply units`,
+        progressIncrease,
+        rewards: {
+          experience: Math.floor(scenario.rewards.experience * (delivered / 25)),
+          resources: Math.floor(scenario.rewards.resources * (delivered / 25)),
+          reputation: Math.floor(scenario.rewards.reputation * (delivered / 25))
+        }
+      };
+    }
+    
+    return { success: false, message: 'Invalid medical action' };
+  }
+
+  /**
+   * Complete a scenario and distribute final rewards
+   */
+  async completeScenario(scenario) {
+    console.log(`Emergency scenario "${scenario.name}" completed with ${scenario.participants.length} participants`);
+    
+    // Mark event as completed in database
+    if (this.database) {
+      await this.database.expireDynamicHazardEvent(scenario.id);
+    }
+    
+    // Remove from active events
+    this.dynamicEvents.delete(scenario.id);
+  }
+
+  /**
+   * Get active emergency scenarios
+   */
+  getActiveEmergencyScenarios() {
+    const scenarios = [];
+    
+    for (const [eventId, eventData] of this.dynamicEvents.entries()) {
+      const eventDef = DYNAMIC_EVENTS[eventData.type];
+      if (eventDef && eventDef.missionType) {
+        scenarios.push({
+          id: eventId,
+          type: eventData.type,
+          missionType: eventDef.missionType,
+          name: eventDef.name,
+          description: eventDef.description,
+          location: eventData.centerSector,
+          rewards: eventDef.rewards,
+          expiresAt: eventData.expiresAt,
+          metadata: eventData.metadata || {},
+          participants: eventData.participants || [],
+          progress: eventData.progress || 0
+        });
+      }
+    }
+    
+    return scenarios;
   }
 }
 
