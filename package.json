@@ -26,6 +26,7 @@
     "monitor": "curl -s http://localhost:3000/metrics | grep active_players",
     "load-test": "node utils/load-testing.js ws://localhost:3000",
     "load-test-stress": "node utils/load-testing.js ws://localhost:3000 100 300000",
+    "demo": "node scripts/performance-demo.js",
     "backup": "node scripts/backup.js",
     "deploy:render": "echo \"Render deployment handled by git push to main branch\""
   },
