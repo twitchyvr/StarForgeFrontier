@@ -1,0 +1,598 @@
+/**
+ * HUD System CSS for StarForgeFrontier
+ * Replaces modal overlays with proper HUD elements that don't obstruct gameplay
+ */
+
+:root {
+  --hud-bg: rgba(13, 27, 42, 0.95);
+  --hud-panel-bg: rgba(20, 39, 61, 0.9);
+  --hud-border: rgba(100, 200, 255, 0.3);
+  --hud-text: #ffffff;
+  --hud-text-secondary: rgba(255, 255, 255, 0.7);
+  --hud-accent: #64c8ff;
+  --hud-success: #28a745;
+  --hud-warning: #ffc107;
+  --hud-danger: #dc3545;
+  
+  --hud-panel-width: 320px;
+  --hud-panel-height: 250px;
+  --hud-edge-padding: 15px;
+  --hud-transition: all 0.3s cubic-bezier(0.4, 0.0, 0.2, 1);
+}
+
+/* ======================
+   HUD Container System
+   ====================== */
+
+.hud-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  z-index: 500;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  color: var(--hud-text);
+}
+
+/* HUD Panel Base */
+.hud-panel {
+  position: absolute;
+  background: var(--hud-bg);
+  border: 1px solid var(--hud-border);
+  border-radius: 12px;
+  backdrop-filter: blur(15px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  transform: translateX(100%);
+  transition: var(--hud-transition);
+  pointer-events: auto;
+  overflow: hidden;
+}
+
+.hud-panel.visible {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.hud-panel.collapsed {
+  opacity: 0.8;
+  transform: scale(0.95) translateX(50%);
+}
+
+/* Panel Header */
+.hud-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: between;
+  padding: 12px 16px;
+  background: var(--hud-panel-bg);
+  border-bottom: 1px solid var(--hud-border);
+  border-radius: 12px 12px 0 0;
+}
+
+.hud-panel-title {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--hud-accent);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.hud-panel-controls {
+  display: flex;
+  gap: 8px;
+}
+
+.hud-control-btn {
+  width: 24px;
+  height: 24px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  color: var(--hud-text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  transition: var(--hud-transition);
+}
+
+.hud-control-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+  color: var(--hud-text);
+}
+
+.hud-control-btn.danger:hover {
+  background: var(--hud-danger);
+  border-color: var(--hud-danger);
+  color: white;
+}
+
+/* Panel Content */
+.hud-panel-content {
+  padding: 16px;
+  max-height: calc(100vh - 120px);
+  overflow-y: auto;
+}
+
+/* ======================
+   HUD Panel Positions
+   ====================== */
+
+/* Top Panels */
+.hud-panel.top {
+  top: var(--hud-edge-padding);
+  left: 50%;
+  transform: translateX(-50%) translateY(-100%);
+  width: 90vw;
+  max-width: 800px;
+  max-height: 300px;
+}
+
+.hud-panel.top.visible {
+  transform: translateX(-50%) translateY(0);
+}
+
+/* Right Panels */
+.hud-panel.right {
+  top: var(--hud-edge-padding);
+  right: var(--hud-edge-padding);
+  width: var(--hud-panel-width);
+  max-height: calc(100vh - 30px);
+  transform: translateX(100%);
+}
+
+.hud-panel.right.visible {
+  transform: translateX(0);
+}
+
+/* Bottom Panels */
+.hud-panel.bottom {
+  bottom: var(--hud-edge-padding);
+  left: 50%;
+  transform: translateX(-50%) translateY(100%);
+  width: 90vw;
+  max-width: 1200px;
+  max-height: var(--hud-panel-height);
+}
+
+.hud-panel.bottom.visible {
+  transform: translateX(-50%) translateY(0);
+}
+
+/* Left Panels */
+.hud-panel.left {
+  top: var(--hud-edge-padding);
+  left: var(--hud-edge-padding);
+  width: var(--hud-panel-width);
+  max-height: calc(100vh - 30px);
+  transform: translateX(-100%);
+}
+
+.hud-panel.left.visible {
+  transform: translateX(0);
+}
+
+/* ======================
+   HUD Toggle Buttons
+   ====================== */
+
+.hud-toggle-container {
+  position: fixed;
+  pointer-events: none;
+  z-index: 600;
+}
+
+/* Top toggles */
+.hud-toggles-top {
+  top: var(--hud-edge-padding);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 8px;
+}
+
+/* Right toggles */
+.hud-toggles-right {
+  top: 50%;
+  right: var(--hud-edge-padding);
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Bottom toggles */
+.hud-toggles-bottom {
+  bottom: var(--hud-edge-padding);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 8px;
+}
+
+/* Left toggles */
+.hud-toggles-left {
+  top: 50%;
+  left: var(--hud-edge-padding);
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hud-toggle-btn {
+  width: 48px;
+  height: 48px;
+  background: var(--hud-bg);
+  border: 1px solid var(--hud-border);
+  border-radius: 12px;
+  color: var(--hud-text-secondary);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  transition: var(--hud-transition);
+  backdrop-filter: blur(10px);
+  pointer-events: auto;
+  position: relative;
+  overflow: hidden;
+}
+
+.hud-toggle-btn:hover {
+  background: var(--hud-panel-bg);
+  color: var(--hud-accent);
+  border-color: var(--hud-accent);
+  transform: scale(1.05);
+  box-shadow: 0 4px 16px rgba(100, 200, 255, 0.3);
+}
+
+.hud-toggle-btn.active {
+  background: var(--hud-accent);
+  color: var(--hud-bg);
+  border-color: var(--hud-accent);
+}
+
+.hud-toggle-icon {
+  font-size: 18px;
+  line-height: 1;
+  margin-bottom: 2px;
+}
+
+.hud-toggle-label {
+  font-size: 8px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  opacity: 0.8;
+}
+
+/* Badge for notifications */
+.hud-toggle-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  background: var(--hud-danger);
+  color: white;
+  border-radius: 50%;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: bold;
+  opacity: 0;
+  transform: scale(0);
+  transition: var(--hud-transition);
+}
+
+.hud-toggle-badge.visible {
+  opacity: 1;
+  transform: scale(1);
+}
+
+/* ======================
+   Specific Panel Styles
+   ====================== */
+
+/* Faction Panel - Right Side */
+.hud-panel.faction-panel {
+  top: 80px;
+  width: 350px;
+}
+
+.faction-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.faction-item {
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  transition: var(--hud-transition);
+}
+
+.faction-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--hud-accent);
+}
+
+/* Guild Panel - Left Side */
+.hud-panel.guild-panel {
+  top: 80px;
+  width: 380px;
+}
+
+.guild-quick-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.guild-action-btn {
+  flex: 1;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  color: var(--hud-text);
+  cursor: pointer;
+  font-size: 12px;
+  transition: var(--hud-transition);
+}
+
+.guild-action-btn:hover {
+  background: var(--hud-accent);
+  border-color: var(--hud-accent);
+  color: var(--hud-bg);
+}
+
+/* Trading Panel - Bottom */
+.hud-panel.trading-panel {
+  height: 280px;
+}
+
+.trading-tabs {
+  display: flex;
+  background: rgba(0, 0, 0, 0.2);
+  margin: -16px -16px 16px -16px;
+  border-bottom: 1px solid var(--hud-border);
+}
+
+.trading-tab {
+  flex: 1;
+  padding: 12px;
+  background: transparent;
+  border: none;
+  color: var(--hud-text-secondary);
+  cursor: pointer;
+  transition: var(--hud-transition);
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.trading-tab:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--hud-text);
+}
+
+.trading-tab.active {
+  background: var(--hud-accent);
+  color: var(--hud-bg);
+}
+
+/* Skills Panel - Top Right */
+.hud-panel.skills-panel {
+  top: 80px;
+  right: 380px;
+  width: 320px;
+}
+
+.skill-tree-compact {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+
+.skill-node-compact {
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  text-align: center;
+  cursor: pointer;
+  transition: var(--hud-transition);
+}
+
+.skill-node-compact:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: var(--hud-accent);
+}
+
+/* Research Panel - Top */
+.hud-panel.research-panel {
+  height: 240px;
+}
+
+.research-tabs {
+  display: flex;
+  background: rgba(0, 0, 0, 0.2);
+  margin: -16px -16px 16px -16px;
+  border-bottom: 1px solid var(--hud-border);
+}
+
+.research-tab {
+  flex: 1;
+  padding: 10px;
+  background: transparent;
+  border: none;
+  color: var(--hud-text-secondary);
+  cursor: pointer;
+  transition: var(--hud-transition);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.research-tab:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--hud-text);
+}
+
+.research-tab.active {
+  background: var(--hud-accent);
+  color: var(--hud-bg);
+}
+
+/* ======================
+   Responsive Design
+   ====================== */
+
+@media (max-width: 1200px) {
+  :root {
+    --hud-panel-width: 280px;
+    --hud-panel-height: 200px;
+  }
+  
+  .hud-panel.faction-panel,
+  .hud-panel.guild-panel,
+  .hud-panel.skills-panel {
+    width: 280px;
+  }
+}
+
+@media (max-width: 768px) {
+  :root {
+    --hud-panel-width: 90vw;
+    --hud-edge-padding: 10px;
+  }
+  
+  .hud-toggle-btn {
+    width: 40px;
+    height: 40px;
+  }
+  
+  .hud-toggle-icon {
+    font-size: 16px;
+  }
+  
+  .hud-toggle-label {
+    display: none;
+  }
+  
+  /* Stack panels vertically on mobile */
+  .hud-panel.right,
+  .hud-panel.left {
+    top: auto;
+    bottom: 60px;
+    left: 50%;
+    transform: translateX(-50%) translateY(100%);
+    width: 90vw;
+    max-width: none;
+  }
+  
+  .hud-panel.right.visible,
+  .hud-panel.left.visible {
+    transform: translateX(-50%) translateY(0);
+  }
+  
+  .hud-panel.skills-panel {
+    right: auto;
+    left: 50%;
+    transform: translateX(-50%) translateY(-100%);
+    width: 90vw;
+  }
+  
+  .hud-panel.skills-panel.visible {
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+/* ======================
+   Utility Classes
+   ====================== */
+
+.hud-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.hud-scrollbar::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 3px;
+}
+
+.hud-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--hud-accent);
+  border-radius: 3px;
+  opacity: 0.5;
+}
+
+.hud-scrollbar::-webkit-scrollbar-thumb:hover {
+  opacity: 0.8;
+}
+
+.hud-text-xs { font-size: 10px; }
+.hud-text-sm { font-size: 12px; }
+.hud-text-base { font-size: 14px; }
+.hud-text-lg { font-size: 16px; }
+
+.hud-mb-2 { margin-bottom: 8px; }
+.hud-mb-4 { margin-bottom: 16px; }
+.hud-mt-2 { margin-top: 8px; }
+.hud-mt-4 { margin-top: 16px; }
+
+.hud-opacity-50 { opacity: 0.5; }
+.hud-opacity-75 { opacity: 0.75; }
+
+/* Animation for smooth panel transitions */
+@keyframes hud-slide-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes hud-slide-in-left {
+  from {
+    opacity: 0;
+    transform: translateX(-100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes hud-slide-in-top {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+@keyframes hud-slide-in-bottom {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}

@@ -20,16 +20,17 @@ html, body {
   background: radial-gradient(circle at center, #0a1931 0%, #010a16 100%);
 }
 
-/* Main HUD container */
+/* Main HUD container - adjusted for new HUD system */
 #hud {
   position: absolute;
-  top: 20px;
-  left: 20px;
+  top: 80px;
+  left: 80px;
   z-index: 10;
   display: flex;
   flex-direction: column;
   gap: 15px;
   pointer-events: none;
+  max-width: calc(100vw - 160px);
 }
 
 .hud-section {
@@ -170,11 +171,11 @@ html, body {
   box-shadow: 0 4px 20px rgba(144, 19, 254, 0.4);
 }
 
-/* Minimap */
+/* Minimap - adjusted for new HUD system */
 #minimap {
   position: absolute;
-  top: 20px;
-  right: 20px;
+  top: 80px;
+  right: 130px;
   width: 200px;
   height: 200px;
   border: 2px solid rgba(100, 200, 255, 0.3);
@@ -1129,11 +1130,12 @@ html, body {
   }
 }
 
-/* Responsive design */
+/* Responsive design - Updated for new HUD system */
 @media (max-width: 768px) {
   #hud {
-    top: 10px;
-    left: 10px;
+    top: 60px;
+    left: 60px;
+    max-width: calc(100vw - 120px);
   }
   
   .player-stats {
@@ -1156,12 +1158,14 @@ html, body {
   
   .combat-log-panel {
     width: 250px;
-    bottom: 10px;
+    bottom: 60px;
   }
   
   #minimap {
-    width: 150px;
-    height: 150px;
+    width: 120px;
+    height: 120px;
+    top: 60px;
+    right: 60px;
   }
   
   .panel {

@@ -50,6 +50,7 @@
   
   <!-- Stylesheets -->
   <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="hud-system.css" />
   <link rel="stylesheet" href="ship-editor.css" />
   <link rel="stylesheet" href="trading-ui.css" />
   <link rel="stylesheet" href="faction-ui.css" />
@@ -164,15 +165,168 @@
   <!-- Minimap -->
   <canvas id="minimap"></canvas>
   
-  <!-- Shop Panel -->
-  <div id="shopPanel" class="panel hidden">
-    <div class="panel-header">
-      <h2>Space Shop</h2>
-      <button id="closeShop" class="close-btn">×</button>
+  <!-- New HUD System Container -->
+  <div class="hud-container">
+    
+    <!-- HUD Toggle Buttons -->
+    <div class="hud-toggles-right hud-toggle-container">
+      <div class="hud-toggle-btn" id="factionToggle">
+        <span class="hud-toggle-icon">⚔️</span>
+        <span class="hud-toggle-label">Factions</span>
+        <span class="hud-toggle-badge" id="factionBadge"></span>
+      </div>
+      <div class="hud-toggle-btn" id="skillsToggle">
+        <span class="hud-toggle-icon">🎯</span>
+        <span class="hud-toggle-label">Skills</span>
+        <span class="hud-toggle-badge" id="skillsBadge"></span>
+      </div>
     </div>
-    <div id="shopContent" class="panel-content">
-      <!-- Shop items will be populated here -->
+    
+    <div class="hud-toggles-left hud-toggle-container">
+      <div class="hud-toggle-btn" id="guildToggle">
+        <span class="hud-toggle-icon">🛡️</span>
+        <span class="hud-toggle-label">Guild</span>
+        <span class="hud-toggle-badge" id="guildBadge"></span>
+      </div>
     </div>
+    
+    <div class="hud-toggles-top hud-toggle-container">
+      <div class="hud-toggle-btn" id="researchToggle">
+        <span class="hud-toggle-icon">🔬</span>
+        <span class="hud-toggle-label">Research</span>
+        <span class="hud-toggle-badge" id="researchBadge"></span>
+      </div>
+    </div>
+    
+    <div class="hud-toggles-bottom hud-toggle-container">
+      <div class="hud-toggle-btn" id="tradingToggle">
+        <span class="hud-toggle-icon">💰</span>
+        <span class="hud-toggle-label">Trading</span>
+        <span class="hud-toggle-badge" id="tradingBadge"></span>
+      </div>
+      <div class="hud-toggle-btn" id="shopToggleNew">
+        <span class="hud-toggle-icon">🛒</span>
+        <span class="hud-toggle-label">Shop</span>
+      </div>
+      <div class="hud-toggle-btn" id="shipEditorToggleNew">
+        <span class="hud-toggle-icon">🔧</span>
+        <span class="hud-toggle-label">Designer</span>
+      </div>
+    </div>
+    
+    <!-- HUD Panels -->
+    
+    <!-- Faction Panel - Right Side -->
+    <div class="hud-panel right faction-panel" id="factionHudPanel">
+      <div class="hud-panel-header">
+        <span class="hud-panel-title">Faction Relations</span>
+        <div class="hud-panel-controls">
+          <button class="hud-control-btn" id="factionRefresh" title="Refresh">🔄</button>
+          <button class="hud-control-btn danger" id="factionClose" title="Close">×</button>
+        </div>
+      </div>
+      <div class="hud-panel-content hud-scrollbar">
+        <div id="factionContent">
+          <!-- Faction content will be populated here -->
+        </div>
+      </div>
+    </div>
+    
+    <!-- Guild Panel - Left Side -->
+    <div class="hud-panel left guild-panel" id="guildHudPanel">
+      <div class="hud-panel-header">
+        <span class="hud-panel-title">Guild Management</span>
+        <div class="hud-panel-controls">
+          <button class="hud-control-btn" id="guildRefresh" title="Refresh">🔄</button>
+          <button class="hud-control-btn danger" id="guildClose" title="Close">×</button>
+        </div>
+      </div>
+      <div class="hud-panel-content hud-scrollbar">
+        <div class="guild-quick-actions">
+          <button class="guild-action-btn" id="createGuild">Create</button>
+          <button class="guild-action-btn" id="joinGuild">Join</button>
+          <button class="guild-action-btn" id="guildHalls">Halls</button>
+        </div>
+        <div id="guildContent">
+          <!-- Guild content will be populated here -->
+        </div>
+      </div>
+    </div>
+    
+    <!-- Skills Panel - Top Right -->
+    <div class="hud-panel right skills-panel" id="skillsHudPanel">
+      <div class="hud-panel-header">
+        <span class="hud-panel-title">Skill Development</span>
+        <div class="hud-panel-controls">
+          <button class="hud-control-btn" id="skillsExpand" title="Full View">⛶</button>
+          <button class="hud-control-btn danger" id="skillsClose" title="Close">×</button>
+        </div>
+      </div>
+      <div class="hud-panel-content hud-scrollbar">
+        <div class="skill-tree-compact" id="skillsContent">
+          <!-- Skills content will be populated here -->
+        </div>
+      </div>
+    </div>
+    
+    <!-- Research Panel - Top -->
+    <div class="hud-panel top research-panel" id="researchHudPanel">
+      <div class="hud-panel-header">
+        <span class="hud-panel-title">Research & Technology</span>
+        <div class="hud-panel-controls">
+          <button class="hud-control-btn" id="researchExpand" title="Full View">⛶</button>
+          <button class="hud-control-btn danger" id="researchClose" title="Close">×</button>
+        </div>
+      </div>
+      <div class="hud-panel-content hud-scrollbar">
+        <div class="research-tabs">
+          <button class="research-tab active" data-tab="active">Active</button>
+          <button class="research-tab" data-tab="available">Available</button>
+          <button class="research-tab" data-tab="completed">Completed</button>
+        </div>
+        <div id="researchContent">
+          <!-- Research content will be populated here -->
+        </div>
+      </div>
+    </div>
+    
+    <!-- Trading Panel - Bottom -->
+    <div class="hud-panel bottom trading-panel" id="tradingHudPanel">
+      <div class="hud-panel-header">
+        <span class="hud-panel-title">Trading & Commerce</span>
+        <div class="hud-panel-controls">
+          <button class="hud-control-btn" id="tradingExpand" title="Full View">⛶</button>
+          <button class="hud-control-btn danger" id="tradingClose" title="Close">×</button>
+        </div>
+      </div>
+      <div class="hud-panel-content hud-scrollbar">
+        <div class="trading-tabs">
+          <button class="trading-tab active" data-tab="stations">Stations</button>
+          <button class="trading-tab" data-tab="market">Market</button>
+          <button class="trading-tab" data-tab="contracts">Contracts</button>
+        </div>
+        <div id="tradingContent">
+          <!-- Trading content will be populated here -->
+        </div>
+      </div>
+    </div>
+    
+    <!-- Shop Panel - Bottom -->
+    <div class="hud-panel bottom" id="shopHudPanel">
+      <div class="hud-panel-header">
+        <span class="hud-panel-title">Space Shop</span>
+        <div class="hud-panel-controls">
+          <button class="hud-control-btn" id="shopRefresh" title="Refresh">🔄</button>
+          <button class="hud-control-btn danger" id="shopCloseNew" title="Close">×</button>
+        </div>
+      </div>
+      <div class="hud-panel-content hud-scrollbar">
+        <div id="shopContent">
+          <!-- Shop items will be populated here -->
+        </div>
+      </div>
+    </div>
+    
   </div>
   
   <!-- Notification Area -->
@@ -214,6 +368,10 @@
     <span id="playerCount">0</span> pilots online
   </div>
   
+  <script src="hud-controller.js"></script>
+  <script src="faction-hud-adapter.js"></script>
+  <script src="guild-hud-adapter.js"></script>
+  <script src="trading-hud-adapter.js"></script>
   <script src="galaxy-ui.js"></script>
   <script src="ship-editor.js"></script>
   <script src="trading-ui.js"></script>
