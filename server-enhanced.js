@@ -2548,12 +2548,18 @@ wss.on('connection', async (ws) => {
       
     } else if (data.type === 'request_sector_info') {
       // Send detailed information about current sector
-      const currentSector = sectorManager.getPlayerSector(player.id);
+      let currentSector = null;
+      try {
+        const sectorCoords = sectorManager.getSectorCoordinatesForPosition(player.x, player.y);
+        currentSector = await sectorManager.getSector(sectorCoords.x, sectorCoords.y);
+      } catch (error) {
+        console.error('Error getting sector info:', error);
+      }
       
       if (currentSector) {
         ws.send(JSON.stringify({
           type: 'sector_info',
-          sector: currentSector.getSectorData()
+          data: currentSector
         }));
       }
       
@@ -3218,7 +3224,16 @@ function startGameLoop() {
         1 + (p.shipProperties.componentCounts.cargo * COMPONENT_EFFECTS.cargo.efficiencyBonus) : 1;
       
       // Get player's current sector
-      const currentSector = sectorManager ? sectorManager.getPlayerSector(p.id) : null;
+      let currentSector = null;
+      if (sectorManager) {
+        try {
+          const sectorCoords = sectorManager.getSectorCoordinatesForPosition(p.x, p.y);
+          currentSector = await sectorManager.getSector(sectorCoords.x, sectorCoords.y);
+        } catch (error) {
+          console.error('Error getting player sector:', error);
+          currentSector = null;
+        }
+      }
       
       if (currentSector && currentSector.isLoaded) {
         // Use sector-based ore collection
