@@ -21,6 +21,10 @@ const DeltaStateManager = require('./utils/delta-state');
 const DatabasePool = require('./utils/database-pool');
 const BroadcastManager = require('./utils/broadcast-manager');
 const PhysicsWorkerManager = require('./utils/physics-worker');
+const PlayerCullingSystem = require('./utils/player-culling');
+const { ObjectPoolManager } = require('./utils/object-pool');
+const PerformanceMonitor = require('./utils/performance-monitor');
+const MessageFrequencyOptimizer = require('./utils/message-optimizer');
 
 const app = express();
 const server = http.createServer(app);
@@ -35,6 +39,22 @@ const spatialIndex = new SpatialIndex(100); // 100 unit grid cells
 const deltaStateManager = new DeltaStateManager();
 const broadcastManager = new BroadcastManager();
 const physicsWorkers = new PhysicsWorkerManager(2); // 2 worker threads
+const playerCulling = new PlayerCullingSystem({
+  maxViewDistance: 2000,
+  maxObjectsPerPlayer: 500,
+  enableDynamicCulling: true
+});
+const objectPool = new ObjectPoolManager();
+const performanceMonitor = new PerformanceMonitor({
+  sampleInterval: 1000,
+  enableProfiling: true,
+  enableGCMonitoring: true
+});
+const messageOptimizer = new MessageFrequencyOptimizer({
+  maxBatchSize: 10,
+  batchInterval: 16,
+  enableCompression: true
+});
 
 // Initialize enhanced database with connection pooling
 const db = new DatabasePool({
@@ -237,6 +257,28 @@ async function initializeServer() {
     await db.initialize();
     console.log('Enhanced database initialized successfully');
     
+    // Start performance monitoring
+    performanceMonitor.start();
+    
+    // Start message optimizer
+    messageOptimizer.start();
+    
+    // Initialize player culling
+    playerCulling.configure({
+      maxViewDistance: 2000,
+      updateInterval: 1000,
+      enableDynamicCulling: true
+    });
+    
+    // Integrate message optimizer with broadcast manager
+    messageOptimizer.sendMessageDirect = (clientId, message) => {
+      const ws = getWebSocketByClientId(clientId);
+      if (ws) {
+        return broadcastManager.sendToClient(ws, message);
+      }
+      return false;
+    };
+    
     spawnInitialOres();
     scheduleSupernova();
     startOptimizedGameLoop();
@@ -308,6 +350,10 @@ app.get('/api/health', (req, res) => {
   const physicsStats = physicsWorkers.getStats();
   const spatialStats = spatialIndex.getStats();
   const deltaStats = deltaStateManager.getStats();
+  const cullingStats = playerCulling.getStats();
+  const poolStats = objectPool.getStats();
+  const performanceStats = performanceMonitor.getCurrentMetrics();
+  const messageOptimizerStats = messageOptimizer.getStats();
 
   const health = {
     status: 'healthy',
@@ -323,7 +369,7 @@ app.get('/api/health', (req, res) => {
       active: activePlayers.size,
       sessions: playerSessions.size
     },
-    performance: performanceMetrics,
+    performance: performanceStats,
     optimizations: {
       database: {
         initialized: db.initialized,
@@ -332,7 +378,10 @@ app.get('/api/health', (req, res) => {
       broadcast: broadcastStats,
       physics: physicsStats,
       spatial: spatialStats,
-      deltaState: deltaStats
+      deltaState: deltaStats,
+      playerCulling: cullingStats,
+      objectPooling: poolStats,
+      messageOptimizer: messageOptimizerStats
     }
   };
   
@@ -411,19 +460,32 @@ app.get('/api/player/:playerId/stats', async (req, res) => {
   }
 });
 
+// Helper function to get WebSocket by client ID
+function getWebSocketByClientId(clientId) {
+  for (const [ws, player] of activePlayers.entries()) {
+    if (player.id === clientId) {
+      return ws;
+    }
+  }
+  return null;
+}
+
 // Optimized utility functions
 function spawnInitialOres() {
   ores = [];
   const num = 20;
   for (let i = 0; i < num; i++) {
-    const ore = {
-      id: uuidv4(),
-      x: Math.random() * 2000 - 1000,
-      y: Math.random() * 2000 - 1000,
-      value: ORE_VALUE
-    };
+    // Use object pool for ore creation
+    const ore = objectPool.createOre(
+      uuidv4(),
+      Math.random() * 2000 - 1000,
+      Math.random() * 2000 - 1000,
+      ORE_VALUE,
+      'common'
+    );
     ores.push(ore);
     spatialIndex.addObject(ore, ore.x, ore.y);
+    playerCulling.updateObject(ore.id, ore.x, ore.y, 'ore');
   }
 }
 
@@ -432,6 +494,11 @@ function removeOre(id) {
   if (oreIndex !== -1) {
     const ore = ores[oreIndex];
     spatialIndex.removeObject(ore);
+    playerCulling.removeObject(ore.id);
+    
+    // Return ore to object pool
+    objectPool.release('ore', ore);
+    
     ores.splice(oreIndex, 1);
   }
 }
@@ -439,10 +506,20 @@ function removeOre(id) {
 function scheduleSupernova(delayMs = 3 * 60 * 1000) {
   const x = Math.random() * 4000 - 2000;
   const y = Math.random() * 4000 - 2000;
-  events.push({ type: 'supernova', x, y, triggerAt: Date.now() + delayMs });
+  
+  // Use object pool for event creation
+  const event = objectPool.createEvent(
+    uuidv4(),
+    'supernova',
+    x, y,
+    {},
+    Date.now() + delayMs
+  );
+  
+  events.push(event);
 }
 
-// Enhanced broadcast using delta state management
+// Enhanced broadcast using delta state management and player culling
 async function broadcastGameState() {
   const startTime = Date.now();
   
@@ -460,24 +537,46 @@ async function broadcastGameState() {
     serverTime: Date.now()
   };
 
-  // Send delta updates to each client
+  // Send optimized updates to each client using culling and delta state
   let messagesSent = 0;
   for (const [ws, player] of activePlayers.entries()) {
     const client = broadcastManager.clients.get(ws);
     if (client) {
-      const deltaResult = deltaStateManager.getGameStateDelta(client.id, gameState);
+      // Get visible objects for this player using culling
+      const visibleObjectIds = playerCulling.getVisibleObjects(player.id);
       
-      if (deltaResult.hasChanges) {
-        const success = broadcastManager.sendToClient(ws, {
-          type: 'deltaUpdate',
-          ...deltaResult
-        });
-        if (success) messagesSent++;
-      }
+      // Filter game state to only include visible objects
+      const culledGameState = {
+        ...gameState,
+        players: gameState.players.filter(p => 
+          p.id === player.id || visibleObjectIds.includes(p.id)
+        ),
+        ores: gameState.ores.filter(ore => 
+          visibleObjectIds.includes(ore.id)
+        )
+      };
+      
+      // Use message optimizer for efficient delivery
+      const success = messageOptimizer.queueMessage(
+        player.id,
+        {
+          type: 'gameUpdate',
+          ...culledGameState
+        },
+        'HIGH', // High priority for game state updates
+        { culled: true, visibleObjects: visibleObjectIds.length }
+      );
+      
+      if (success) messagesSent++;
     }
   }
 
-  performanceMetrics.broadcastTime = Date.now() - startTime;
+  performanceMonitor.updateGameMetrics({
+    gameLoopTime: Date.now() - startTime,
+    playersCount: activePlayers.size,
+    entitiesCount: ores.length + activePlayers.size
+  });
+
   return messagesSent;
 }
 
@@ -602,8 +701,9 @@ wss.on('connection', async (ws) => {
           channels: ['global', 'game']
         });
         
-        // Add to spatial index
+        // Add to spatial index and player culling
         spatialIndex.addObject(player, player.x, player.y);
+        playerCulling.updatePlayerPosition(player.id, player.x, player.y);
         
         sessionId = await db.startGameSession(player.id);
         playerSessions.set(player.id, {
@@ -830,7 +930,9 @@ wss.on('connection', async (ws) => {
     if (player) {
       activePlayers.delete(ws);
       spatialIndex.removeObject(player);
+      playerCulling.updatePlayerPosition(player.id, -99999, -99999); // Remove from game world
       broadcastManager.unregisterClient(ws);
+      messageOptimizer.removeClient?.(player.id);
       
       broadcastManager.broadcastToChannel('global', 
         { type: 'player_disconnect', id: player.id }
@@ -907,9 +1009,10 @@ function startOptimizedGameLoop() {
             player.x = updatedPlayer.x;
             player.y = updatedPlayer.y;
             
-            // Update spatial indices
+            // Update spatial indices and player culling
             spatialIndex.updateObject(player, player.x, player.y);
             broadcastManager.updateClientPosition(ws, player.x, player.y);
+            playerCulling.updatePlayerPosition(player.id, player.x, player.y);
             
             // Calculate distance traveled
             if (Math.abs(oldX - player.x) > 0.1 || Math.abs(oldY - player.y) > 0.1) {
@@ -950,33 +1053,46 @@ function startOptimizedGameLoop() {
         spawnInitialOres();
       }
       
-      // Handle scheduled events
+      // Handle scheduled events with object pooling
       const now = Date.now();
       events = events.filter(ev => {
         if (ev.triggerAt <= now) {
           if (ev.type === 'supernova') {
+            // Spawn ores using object pool
             const num = 40;
             for (let i = 0; i < num; i++) {
               const angle = Math.random() * Math.PI * 2;
               const dist = Math.random() * 200;
-              const ore = {
-                id: uuidv4(),
-                x: ev.x + Math.cos(angle) * dist,
-                y: ev.y + Math.sin(angle) * dist,
-                value: ORE_VALUE * 2
-              };
+              const ore = objectPool.createOre(
+                uuidv4(),
+                ev.x + Math.cos(angle) * dist,
+                ev.y + Math.sin(angle) * dist,
+                ORE_VALUE * 2,
+                'supernova'
+              );
               ores.push(ore);
               spatialIndex.addObject(ore, ore.x, ore.y);
+              playerCulling.updateObject(ore.id, ore.x, ore.y, 'ore');
             }
             
-            broadcastManager.broadcastToChannel('global', { 
-              type: 'event', 
-              event: { type: 'supernova', x: ev.x, y: ev.y } 
-            });
+            // Use message optimizer for event broadcast
+            const eventMessage = {
+              type: 'event',
+              event: { type: 'supernova', x: ev.x, y: ev.y }
+            };
             
+            // Send to all players
+            for (const [ws, player] of activePlayers.entries()) {
+              messageOptimizer.queueMessage(player.id, eventMessage, 'MEDIUM');
+            }
+            
+            // Schedule next supernova
             const delay = (2 + Math.random() * 3) * 60 * 1000;
             scheduleSupernova(delay);
           }
+          
+          // Return event to object pool
+          objectPool.release('event', ev);
           return false;
         }
         return true;
@@ -1002,11 +1118,26 @@ function startOptimizedGameLoop() {
       
       // Update performance metrics
       const loopTime = Date.now() - loopStartTime;
-      performanceMetrics.gameLoopCount++;
-      performanceMetrics.averageGameLoopTime = 
-        (performanceMetrics.averageGameLoopTime * (performanceMetrics.gameLoopCount - 1) + loopTime) / 
-        performanceMetrics.gameLoopCount;
-      performanceMetrics.lastGameLoopTime = loopTime;
+      performanceMonitor.updateGameMetrics({
+        gameLoopTime: loopTime,
+        playersCount: activePlayers.size,
+        entitiesCount: ores.length + activePlayers.size,
+        physicsTime: performanceMetrics.physicsCalculationTime
+      });
+      
+      // Update network metrics
+      performanceMonitor.updateNetworkMetrics({
+        connectionsOpened: 0, // Tracked elsewhere
+        connectionsClosed: 0, // Tracked elsewhere
+        messagesQueued: messageOptimizer.getStats().queueSizes.priority_2 || 0
+      });
+      
+      // Periodic cleanup
+      if (loopStartTime % 30000 < TICK_INTERVAL) { // Every 30 seconds
+        objectPool.cleanup();
+        playerCulling.cleanup();
+        messageOptimizer.cleanup?.();
+      }
       
     } catch (error) {
       console.error('Game loop error:', error);
@@ -1048,6 +1179,10 @@ process.on('SIGINT', async () => {
   broadcastManager.shutdown();
   spatialIndex.clear();
   deltaStateManager.removeClient();
+  playerCulling.reset();
+  objectPool.clearAll();
+  performanceMonitor.stop();
+  messageOptimizer.stop();
   
   await db.close();
   server.close();
@@ -1068,4 +1203,14 @@ server.listen(PORT, async () => {
   await initializeServer();
 });
 
-module.exports = { server, db, spatialIndex, broadcastManager, physicsWorkers };
+module.exports = { 
+  server, 
+  db, 
+  spatialIndex, 
+  broadcastManager, 
+  physicsWorkers,
+  playerCulling,
+  objectPool,
+  performanceMonitor,
+  messageOptimizer
+};
